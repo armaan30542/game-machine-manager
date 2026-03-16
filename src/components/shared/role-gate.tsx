@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@/hooks/use-user";
+import { useProfile } from "@/hooks/use-profile";
 import type { UserRole } from "@/types/database";
 
 interface RoleGateProps {
@@ -10,7 +10,7 @@ interface RoleGateProps {
 }
 
 export function RoleGate({ requiredRole, children, fallback = null }: RoleGateProps) {
-  const { profile } = useUser();
+  const { profile } = useProfile();
 
   if (requiredRole === "admin" && profile?.role !== "admin") {
     return <>{fallback}</>;

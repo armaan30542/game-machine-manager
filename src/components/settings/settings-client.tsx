@@ -39,7 +39,7 @@ import {
 import { Plus, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Profile, UserRole } from "@/types/database";
 
 interface SettingsClientProps {
@@ -60,7 +60,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<UserRole>("reporting");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const supabase = createClient();
 
   async function handleInvite() {
@@ -84,7 +84,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
         setEmail("");
         setFullName("");
         setRole("reporting");
-        router.refresh();
+        queryClient.invalidateQueries();
       } else {
         toast.error(data.error || "Failed to invite user");
       }
@@ -105,7 +105,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
       toast.error("Failed to update role");
     } else {
       toast.success("Role updated");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
   }
 

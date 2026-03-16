@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,7 @@ interface MachineFormProps {
 
 export function MachineForm({ machine }: MachineFormProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const isEdit = !!machine;
   const [loading, setLoading] = useState(false);
   const [machineSearch, setMachineSearch] = useState("");
@@ -65,8 +67,8 @@ export function MachineForm({ machine }: MachineFormProps) {
         toast.error(result.error);
       } else {
         toast.success("Machine updated");
+        queryClient.invalidateQueries();
         router.push(`/machines/${machine!.id}`);
-        router.refresh();
       }
     } else {
       const result = await createMachine({
