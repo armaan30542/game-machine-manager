@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -28,6 +29,7 @@ interface LocationsClientProps {
 }
 
 export function LocationsClient({ locations }: LocationsClientProps) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
@@ -109,19 +111,14 @@ export function LocationsClient({ locations }: LocationsClientProps) {
               </TableRow>
             ) : (
               filtered.map((loc) => (
-                <TableRow key={loc.id} className="cursor-pointer hover:bg-muted/50">
+                <TableRow key={loc.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/locations/${loc.id}`)}>
                   <TableCell>
-                    <Link
-                      href={`/locations/${loc.id}`}
-                      className="font-medium text-primary hover:underline"
-                    >
+                    <span className="font-medium text-primary">
                       {loc.location_number}
-                    </Link>
+                    </span>
                   </TableCell>
                   <TableCell>
-                    <Link href={`/locations/${loc.id}`} className="hover:underline">
-                      {loc.name}
-                    </Link>
+                    {loc.name}
                   </TableCell>
                   <TableCell>{loc.city}</TableCell>
                   <TableCell>
