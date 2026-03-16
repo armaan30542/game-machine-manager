@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -111,15 +111,15 @@ export function LocationsClient({ locations }: LocationsClientProps) {
               </TableRow>
             ) : (
               filtered.map((loc) => (
-                <TableRow key={loc.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/locations/${loc.id}`)}>
-                  <TableCell>
-                    <span className="font-medium text-primary">
-                      {loc.location_number}
-                    </span>
+                <TableRow
+                  key={loc.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/locations/${loc.id}`)}
+                >
+                  <TableCell className="font-medium text-primary">
+                    {loc.location_number}
                   </TableCell>
-                  <TableCell>
-                    {loc.name}
-                  </TableCell>
+                  <TableCell>{loc.name}</TableCell>
                   <TableCell>{loc.city}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{loc.state}</Badge>
