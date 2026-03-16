@@ -26,9 +26,16 @@ export async function POST(request: NextRequest) {
 
   const adminClient = createAdminClient();
 
+  // Build the redirect URL — after email verification, the user lands on /set-password
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    request.headers.get("origin") ||
+    "https://game-machine-manager.vercel.app";
+
   const { data, error } = await adminClient.auth.admin.inviteUserByEmail(
     email,
     {
+      redirectTo: `${siteUrl}/auth/callback?next=/set-password`,
       data: {
         full_name: full_name || email,
         role: role || "reporting",
