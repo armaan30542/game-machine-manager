@@ -6,7 +6,7 @@ import { updateMachine } from "@/actions/machine-actions";
 import { Button } from "@/components/ui/button";
 import { Camera, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface MachinePhotoProps {
   machineId: string;
@@ -18,7 +18,7 @@ export function MachinePhoto({ machineId, photoPath }: MachinePhotoProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const photoUrl = photoPath
     ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/machine-photos/${photoPath}`
@@ -45,7 +45,7 @@ export function MachinePhoto({ machineId, photoPath }: MachinePhotoProps) {
       await updateMachine(machineId, { photo_path: filePath });
 
       toast.success("Photo uploaded");
-      router.refresh();
+      queryClient.invalidateQueries();
     } catch (err) {
       toast.error("Failed to upload photo");
       console.error(err);
@@ -67,7 +67,7 @@ export function MachinePhoto({ machineId, photoPath }: MachinePhotoProps) {
       }
       await updateMachine(machineId, { photo_path: null });
       toast.success("Photo removed");
-      router.refresh();
+      queryClient.invalidateQueries();
     } catch {
       toast.error("Failed to remove photo");
     }

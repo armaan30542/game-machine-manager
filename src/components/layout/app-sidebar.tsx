@@ -24,7 +24,7 @@ import {
   Gamepad2,
   LogOut,
 } from "lucide-react";
-import { useUser } from "@/hooks/use-user";
+import { useProfile } from "@/hooks/use-profile";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +43,7 @@ const adminItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { profile } = useUser();
+  const { profile } = useProfile();
   const router = useRouter();
   const supabase = createClient();
 

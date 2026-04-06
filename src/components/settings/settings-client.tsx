@@ -55,7 +55,7 @@ import {
 import { UserPlus, MoreHorizontal, KeyRound, Trash2, Shield } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Profile, UserRole } from "@/types/database";
 
 const MAIN_ADMIN_EMAIL = "cg.ne.printer@gmail.com";
@@ -80,7 +80,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const supabase = createClient();
 
   async function handleInvite() {
@@ -102,7 +102,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
         setEmail("");
         setFullName("");
         setRole("reporting");
-        router.refresh();
+        queryClient.invalidateQueries();
       } else {
         toast.error(data.error || "Failed to invite user");
       }
@@ -128,7 +128,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
       toast.error("Failed to update role");
     } else {
       toast.success("Role updated");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
   }
 
@@ -170,7 +170,7 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
 
       if (res.ok) {
         toast.success(`Deleted user ${deleteTarget.email}`);
-        router.refresh();
+        queryClient.invalidateQueries();
       } else {
         toast.error(data.error || "Failed to delete user");
       }

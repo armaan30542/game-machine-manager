@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { RefreshCw, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { RevenueRecord, Location } from "@/types/database";
 
 interface RevenueRecordWithLocation extends RevenueRecord {
@@ -56,7 +56,7 @@ export function RevenueClient({
 }: RevenueClientProps) {
   const [fetching, setFetching] = useState(false);
   const [stateFilter, setStateFilter] = useState<string>("all");
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const filtered = revenueRecords.filter((r) => {
     if (stateFilter === "all") return true;
@@ -90,14 +90,13 @@ export function RevenueClient({
             `Fetched revenue for ${successes}/${data.results.length} locations`
           );
         } else {
-          // Show debug info if all values are 0
           const preview = firstResult?.html_preview || "empty";
           const errMsg = errors.length > 0 ? errors[0].error : "none";
           toast.error(
             `Data returned 0. First location: ${firstResult?.location_number}. Error: ${errMsg}. HTML starts with: ${preview.substring(0, 200)}`
           );
         }
-        router.refresh();
+        queryClient.invalidateQueries();
       } else {
         toast.error(data.error || "Failed to fetch revenue");
       }

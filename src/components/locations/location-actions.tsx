@@ -20,7 +20,7 @@ import { XCircle, RotateCcw, Minus } from "lucide-react";
 import { closeLocation, reopenLocation } from "@/actions/location-actions";
 import { removeDispenserFromLocation } from "@/actions/dispenser-actions";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Location } from "@/types/database";
 
 interface LocationActionsProps {
@@ -41,7 +41,7 @@ export function LocationActions({
     new Date().toISOString().split("T")[0]
   );
   const [closeNotes, setCloseNotes] = useState("");
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   if (!isAdmin) return null;
 
@@ -52,7 +52,7 @@ export function LocationActions({
       toast.error(result.error);
     } else {
       toast.success("Location closed successfully");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }
@@ -64,7 +64,7 @@ export function LocationActions({
       toast.error(result.error);
     } else {
       toast.success("Location reopened");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }
@@ -77,7 +77,7 @@ export function LocationActions({
       toast.error(result.error);
     } else {
       toast.success("Dispenser removed from location");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }

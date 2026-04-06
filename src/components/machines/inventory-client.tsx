@@ -36,7 +36,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Search, Trash2 } from "lucide-react";
 import { deleteMachine } from "@/actions/machine-actions";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Machine, Dispenser } from "@/types/database";
 import { CABINET_TYPES } from "@/lib/constants";
 
@@ -238,7 +238,7 @@ function DeleteMachineButton({
   machineName: string;
 }) {
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   async function handleDelete() {
     setLoading(true);
@@ -247,7 +247,7 @@ function DeleteMachineButton({
       toast.error(result.error);
     } else {
       toast.success("Machine deleted");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }

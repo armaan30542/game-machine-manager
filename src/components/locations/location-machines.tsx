@@ -55,7 +55,7 @@ import {
 } from "@/actions/machine-actions";
 import { addDispenserToLocation } from "@/actions/dispenser-actions";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Machine, Dispenser } from "@/types/database";
 import Link from "next/link";
 
@@ -226,7 +226,7 @@ function AddMachineDialog({
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const availablePositions = Array.from({ length: 9 }, (_, i) => i + 1).filter(
     (p) => !occupiedPositions.includes(p)
@@ -255,7 +255,7 @@ function AddMachineDialog({
       setSelectedMachine("");
       setPosition("");
       setNotes("");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }
@@ -352,7 +352,7 @@ function AddMachineDialog({
 function RemoveMachineDialog({ machine }: { machine: Machine }) {
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState("");
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   async function handleRemove() {
     setLoading(true);
@@ -364,7 +364,7 @@ function RemoveMachineDialog({ machine }: { machine: Machine }) {
       toast.error(result.error);
     } else {
       toast.success("Machine returned to inventory");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }
@@ -416,7 +416,7 @@ function ReplaceMachineDialog({
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const filteredInventory = inventoryMachines.filter(
     (m) =>
@@ -440,7 +440,7 @@ function ReplaceMachineDialog({
       setOpen(false);
       setSelectedReplacement("");
       setNotes("");
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }
@@ -529,7 +529,7 @@ function AddDispenserDialog({
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   async function handleAdd() {
     if (!selected) return;
@@ -540,7 +540,7 @@ function AddDispenserDialog({
     } else {
       toast.success("Dispenser added to location");
       setOpen(false);
-      router.refresh();
+      queryClient.invalidateQueries();
     }
     setLoading(false);
   }
