@@ -134,10 +134,8 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
     formData.append(submitName, submitValue);
   }
 
-  // Post to index.php explicitly (form with no action posts to current page)
-  const postUrl = baseUrl + "index.php";
-
-  const loginRes = await fetch(postUrl, {
+  // POST to same URL as the form page (form has no action attribute)
+  const loginRes = await fetch(baseUrl, {
     method: "POST",
     redirect: "manual",
     headers: {
