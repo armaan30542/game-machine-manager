@@ -1,5 +1,9 @@
-import chromium from "@sparticuz/chromium";
+import chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
+
+// Remote chromium binary for Vercel serverless (no local bin needed)
+const CHROMIUM_REMOTE_URL =
+  "https://github.com/nicholasgasior/chromium-brotli-lambda-layer/releases/download/v133.0.0/chromium-v133.0.0-pack.tar";
 
 /**
  * Normalize a ksys22 revenue URL to ensure it points to the period page.
@@ -29,7 +33,7 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   const browser = await puppeteer.launch({
     args: chromium.args,
     defaultViewport: { width: 1280, height: 720 },
-    executablePath: await chromium.executablePath(),
+    executablePath: await chromium.executablePath(CHROMIUM_REMOTE_URL),
     headless: true,
   });
 
