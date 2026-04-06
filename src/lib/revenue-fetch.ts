@@ -1,6 +1,5 @@
 /**
  * Normalize a ksys22 revenue URL to ensure it points to the period page.
- * Some URLs are like "https://ksys22.com/ksals20/" and need "kperiod.php" appended.
  */
 export function normalizeRevenueUrl(url: string): string {
   if (url.endsWith("kperiod.php")) return url;
@@ -9,7 +8,7 @@ export function normalizeRevenueUrl(url: string): string {
 }
 
 /**
- * Get the base URL from a revenue URL (e.g. "https://ksys22.com/ksals20/")
+ * Get the base URL from a revenue URL
  */
 function getBaseUrl(url: string): string {
   if (url.endsWith("kperiod.php")) {
@@ -18,13 +17,14 @@ function getBaseUrl(url: string): string {
   return url.endsWith("/") ? url : url + "/";
 }
 
+function extractSessionId(setCookieHeader: string | null): string {
+  if (!setCookieHeader) return "";
+  const match = setCookieHeader.match(/PHPSESSID=([^;,\s]+)/);
+  return match ? match[1] : "";
+}
+
 /**
  * Fetch revenue page from ksys22 using form-based login.
- *
- * ksys22 uses session-based auth:
- * 1. POST to the base URL with username/password form fields
- * 2. Capture the session cookie from the response
- * 3. Use that cookie to GET kperiod.php
  */
 export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   const username = process.env.REVENUE_API_USERNAME;
@@ -37,67 +37,78 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   const baseUrl = getBaseUrl(revenueUrl);
   const periodUrl = normalizeRevenueUrl(revenueUrl);
 
-  // Step 1: GET the login page to discover the username field name and get initial cookie
-  const loginPageRes = await fetch(baseUrl, { redirect: "manual" });
+  // Step 1: GET login page for PHPSESSID and username field name
+  const loginPageRes = await fetch(baseUrl, {
+    redirect: "manual",
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
   const loginHtml = await loginPageRes.text();
 
-  // Extract the username field name (it's an obfuscated hash that may change per instance)
-  const usernameFieldMatch = loginHtml.match(
+  let sessionId = extractSessionId(loginPageRes.headers.get("set-cookie"));
+
+  // Extract username field name (obfuscated)
+  const fieldMatch = loginHtml.match(
     /<input[^>]*type=['"]text['"][^>]*name=['"]([^'"]+)['"]/
   );
-  const usernameField = usernameFieldMatch ? usernameFieldMatch[1] : "user";
+  const usernameField = fieldMatch ? fieldMatch[1] : "user";
 
-  // Collect cookies from login page
-  const loginCookies = extractCookies(loginPageRes.headers);
-
-  // Step 2: POST login form
-  const formData = new URLSearchParams();
-  formData.append(usernameField, username);
-  formData.append("pass", password);
-  formData.append("go", "Log in");
+  // Step 2: POST login - use redirect: "manual" to capture cookies from 302
+  const formBody = `${encodeURIComponent(usernameField)}=${encodeURIComponent(username)}&pass=${encodeURIComponent(password)}&go=${encodeURIComponent("Log in")}`;
 
   const loginRes = await fetch(baseUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      ...(loginCookies ? { Cookie: loginCookies } : {}),
+      "Cookie": `PHPSESSID=${sessionId}`,
+      "User-Agent": "Mozilla/5.0",
     },
-    body: formData.toString(),
+    body: formBody,
     redirect: "manual",
   });
 
-  // Collect session cookies from login response
-  const sessionCookies = extractCookies(loginRes.headers);
-  const allCookies = mergeCookies(loginCookies, sessionCookies);
+  // Update session ID if a new one was set
+  const newSessionId = extractSessionId(loginRes.headers.get("set-cookie"));
+  if (newSessionId) sessionId = newSessionId;
 
-  // Step 3: Fetch the period page with session cookie
+  // If login returned a redirect, follow it to establish the session
+  const redirectLocation = loginRes.headers.get("location");
+  if (redirectLocation) {
+    const redirectUrl = redirectLocation.startsWith("http")
+      ? redirectLocation
+      : new URL(redirectLocation, baseUrl).toString();
+
+    const redirectRes = await fetch(redirectUrl, {
+      headers: {
+        "Cookie": `PHPSESSID=${sessionId}`,
+        "User-Agent": "Mozilla/5.0",
+      },
+      redirect: "manual",
+    });
+
+    const redirectSessionId = extractSessionId(redirectRes.headers.get("set-cookie"));
+    if (redirectSessionId) sessionId = redirectSessionId;
+  }
+
+  // Step 3: Fetch the period page with authenticated session
   const periodRes = await fetch(periodUrl, {
     headers: {
-      ...(allCookies ? { Cookie: allCookies } : {}),
+      "Cookie": `PHPSESSID=${sessionId}`,
+      "User-Agent": "Mozilla/5.0",
     },
     redirect: "follow",
   });
 
-  return periodRes.text();
-}
+  const html = await periodRes.text();
 
-function extractCookies(headers: Headers): string {
-  const setCookies = headers.getSetCookie?.() ?? [];
-  if (setCookies.length === 0) {
-    // Fallback: try get raw header
-    const raw = headers.get("set-cookie");
-    if (!raw) return "";
-    return raw
-      .split(/,(?=\s*\w+=)/)
-      .map((c) => c.split(";")[0].trim())
-      .join("; ");
+  // Verify we got data, not the login page
+  if (html.includes("klogin.css")) {
+    throw new Error(
+      `Login failed. Status: ${loginRes.status}. ` +
+      `Redirect: ${redirectLocation || "none"}. ` +
+      `Session: ${sessionId}. ` +
+      `Field: ${usernameField}`
+    );
   }
-  return setCookies.map((c) => c.split(";")[0].trim()).join("; ");
-}
 
-function mergeCookies(existing: string, newCookies: string): string {
-  if (!existing && !newCookies) return "";
-  if (!existing) return newCookies;
-  if (!newCookies) return existing;
-  return `${existing}; ${newCookies}`;
+  return html;
 }
