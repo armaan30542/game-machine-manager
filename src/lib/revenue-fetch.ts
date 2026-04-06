@@ -1,10 +1,3 @@
-import chromium from "@sparticuz/chromium-min";
-import puppeteer from "puppeteer-core";
-
-// Remote chromium binary for Vercel serverless (no local bin needed)
-const CHROMIUM_REMOTE_URL =
-  "https://github.com/nicholasgasior/chromium-brotli-lambda-layer/releases/download/v133.0.0/chromium-v133.0.0-pack.tar";
-
 /**
  * Normalize a ksys22 revenue URL to ensure it points to the period page.
  */
@@ -15,8 +8,93 @@ export function normalizeRevenueUrl(url: string): string {
 }
 
 /**
- * Fetch revenue page from ksys22 using Puppeteer headless browser.
- * This handles form-based login with cookies/sessions automatically.
+ * Extract form field names from ksys22 login page HTML.
+ * The username field has an obfuscated name (hash), so we parse the HTML
+ * to find the actual input names.
+ */
+function parseLoginForm(html: string): {
+  usernameField: string;
+  passwordField: string;
+  hiddenFields: Record<string, string>;
+  action: string;
+} {
+  // Find all input fields in the form
+  const inputs = [...html.matchAll(/<input[^>]*>/gi)];
+
+  let usernameField = "";
+  let passwordField = "";
+  const hiddenFields: Record<string, string> = {};
+
+  for (const input of inputs) {
+    const tag = input[0];
+    const typeMatch = tag.match(/type=['"]?(\w+)['"]?/i);
+    const nameMatch = tag.match(/name=['"]?([^'">\s]+)['"]?/i);
+
+    if (!nameMatch) continue;
+    const name = nameMatch[1];
+    const type = (typeMatch?.[1] || "text").toLowerCase();
+
+    if (type === "text") usernameField = name;
+    else if (type === "password") passwordField = name;
+    else if (type === "hidden") {
+      const valueMatch = tag.match(/value=['"]?([^'">\s]*)['"]?/i);
+      hiddenFields[name] = valueMatch?.[1] || "";
+    }
+  }
+
+  // Find form action
+  const actionMatch = html.match(/<form[^>]*action=['"]?([^'">\s]*)['"]?/i);
+  const action = actionMatch?.[1] || "";
+
+  return { usernameField, passwordField, hiddenFields, action };
+}
+
+/**
+ * Extract PHPSESSID from Set-Cookie headers.
+ */
+function extractSessionCookie(response: Response): string {
+  const cookies: string[] = [];
+  response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === "set-cookie") {
+      cookies.push(value);
+    }
+  });
+
+  // Also check getSetCookie if available
+  if (response.headers.getSetCookie) {
+    cookies.push(...response.headers.getSetCookie());
+  }
+
+  for (const cookie of cookies) {
+    const match = cookie.match(/PHPSESSID=([^;]+)/);
+    if (match) return match[1];
+  }
+  return "";
+}
+
+/**
+ * Build a multipart/form-data body manually.
+ */
+function buildMultipartBody(
+  fields: Record<string, string>,
+  boundary: string
+): string {
+  let body = "";
+  for (const [key, value] of Object.entries(fields)) {
+    body += `--${boundary}\r\n`;
+    body += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
+    body += `${value}\r\n`;
+  }
+  body += `--${boundary}--\r\n`;
+  return body;
+}
+
+/**
+ * Fetch revenue page from ksys22 using native fetch with form-based login.
+ * Steps:
+ * 1. GET login page → extract PHPSESSID cookie + form field names
+ * 2. POST login with multipart/form-data using extracted field names
+ * 3. GET kperiod.php with session cookie
  */
 export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   const username = process.env.REVENUE_API_USERNAME;
@@ -28,53 +106,86 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
 
   const baseUrl = revenueUrl.endsWith("kperiod.php")
     ? revenueUrl.replace("kperiod.php", "")
-    : revenueUrl.endsWith("/") ? revenueUrl : revenueUrl + "/";
+    : revenueUrl.endsWith("/")
+      ? revenueUrl
+      : revenueUrl + "/";
 
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: { width: 1280, height: 720 },
-    executablePath: await chromium.executablePath(CHROMIUM_REMOTE_URL),
-    headless: true,
+  // Step 1: GET login page to get session cookie and form field names
+  const loginPageRes = await fetch(baseUrl, {
+    redirect: "manual",
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    },
   });
 
-  try {
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  let sessionId = extractSessionCookie(loginPageRes);
+  const loginHtml = await loginPageRes.text();
+
+  const { usernameField, passwordField, hiddenFields } =
+    parseLoginForm(loginHtml);
+
+  if (!usernameField || !passwordField) {
+    throw new Error(
+      `Could not find login form fields. Username field: "${usernameField}", Password field: "${passwordField}"`
     );
-
-    // Go to the login page
-    await page.goto(baseUrl, { waitUntil: "networkidle0", timeout: 15000 });
-
-    // Fill in the login form
-    // Username field has an obfuscated name, so find it by type
-    await page.type("input[type='text']", username);
-    await page.type("input[type='password']", password);
-
-    // Submit the form and wait for navigation
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "networkidle0", timeout: 15000 }),
-      page.click("input[type='submit']"),
-    ]);
-
-    // Navigate to the period page if not already there
-    const currentUrl = page.url();
-    if (!currentUrl.includes("kperiod.php")) {
-      await page.goto(baseUrl + "kperiod.php", {
-        waitUntil: "networkidle0",
-        timeout: 15000,
-      });
-    }
-
-    // Get the page HTML
-    const html = await page.content();
-
-    if (html.includes("klogin.css")) {
-      throw new Error("Login failed - still on login page after form submission");
-    }
-
-    return html;
-  } finally {
-    await browser.close();
   }
+
+  // Step 2: POST login with multipart/form-data
+  // Include any hidden fields from the form (CSRF tokens, etc.)
+  const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
+  const formFields: Record<string, string> = {
+    ...hiddenFields,
+    [usernameField]: username,
+    [passwordField]: password,
+  };
+
+  const body = buildMultipartBody(formFields, boundary);
+
+  const loginRes = await fetch(baseUrl, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      Cookie: sessionId ? `PHPSESSID=${sessionId}` : "",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Referer: baseUrl,
+    },
+    body,
+  });
+
+  // Update session cookie if a new one was set
+  const newSession = extractSessionCookie(loginRes);
+  if (newSession) sessionId = newSession;
+
+  // Check redirect location
+  const redirectUrl = loginRes.headers.get("location") || "";
+  if (redirectUrl.includes("klogout")) {
+    throw new Error("Login failed - redirected to logout page");
+  }
+
+  // Consume the login response body
+  await loginRes.text();
+
+  // Step 3: GET the period page with session cookie
+  const periodUrl = baseUrl + "kperiod.php";
+  const periodRes = await fetch(periodUrl, {
+    headers: {
+      Cookie: `PHPSESSID=${sessionId}`,
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Referer: baseUrl,
+    },
+  });
+
+  const html = await periodRes.text();
+
+  if (html.includes("klogin.css")) {
+    throw new Error(
+      "Login failed - session not valid, got login page instead of revenue data"
+    );
+  }
+
+  return html;
 }
