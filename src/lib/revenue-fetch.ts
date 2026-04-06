@@ -52,17 +52,19 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   );
   const usernameField = fieldMatch ? fieldMatch[1] : "user";
 
-  // Step 2: POST login - use redirect: "manual" to capture cookies from 302
-  const formBody = `${encodeURIComponent(usernameField)}=${encodeURIComponent(username)}&pass=${encodeURIComponent(password)}&go=${encodeURIComponent("Log in")}`;
+  // Step 2: POST login using multipart/form-data (required by the form)
+  const formData = new FormData();
+  formData.append(usernameField, username);
+  formData.append("pass", password);
+  formData.append("go", "Log in");
 
   const loginRes = await fetch(baseUrl, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
       "Cookie": `PHPSESSID=${sessionId}`,
       "User-Agent": "Mozilla/5.0",
     },
-    body: formBody,
+    body: formData,
     redirect: "manual",
   });
 
