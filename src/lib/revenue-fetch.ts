@@ -7,9 +7,6 @@ export function normalizeRevenueUrl(url: string): string {
   return base + "kperiod.php";
 }
 
-/**
- * Get the base URL from a revenue URL
- */
 function getBaseUrl(url: string): string {
   if (url.endsWith("kperiod.php")) {
     return url.replace("kperiod.php", "");
@@ -17,29 +14,25 @@ function getBaseUrl(url: string): string {
   return url.endsWith("/") ? url : url + "/";
 }
 
-function extractSessionId(setCookieHeader: string | null): string {
-  if (!setCookieHeader) return "";
-  const match = setCookieHeader.match(/PHPSESSID=([^;,\s]+)/);
-  return match ? match[1] : "";
-}
-
-/**
- * Build a multipart/form-data body manually for Node.js compatibility.
- */
-function buildMultipartBody(fields: Record<string, string>): { body: string; boundary: string } {
-  const boundary = "----FormBoundary" + Math.random().toString(36).substring(2);
-  let body = "";
-  for (const [key, value] of Object.entries(fields)) {
-    body += `--${boundary}\r\n`;
-    body += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
-    body += `${value}\r\n`;
+function extractAllCookies(headers: Headers): string {
+  // Get all set-cookie headers and combine into a cookie string
+  const raw = headers.get("set-cookie");
+  if (!raw) return "";
+  // set-cookie can have multiple values separated by commas, but cookie values
+  // can also contain commas in expires. Split on PHPSESSID to be safe.
+  const cookies: string[] = [];
+  const matches = raw.matchAll(/([A-Za-z_][A-Za-z0-9_]*)=([^;,\s]*)/g);
+  for (const m of matches) {
+    cookies.push(`${m[1]}=${m[2]}`);
   }
-  body += `--${boundary}--\r\n`;
-  return { body, boundary };
+  return cookies.join("; ");
 }
 
 /**
  * Fetch revenue page from ksys22 using form-based login.
+ *
+ * The login form uses multipart/form-data with an obfuscated username field.
+ * We need to: GET login page -> extract field name + cookies -> POST form -> follow redirect -> fetch period page
  */
 export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   const username = process.env.REVENUE_API_USERNAME;
@@ -51,139 +44,83 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
 
   const baseUrl = getBaseUrl(revenueUrl);
   const periodUrl = normalizeRevenueUrl(revenueUrl);
+  const indexUrl = baseUrl + "index.php";
 
-  // Step 1: GET login page for PHPSESSID and username field name
-  const loginPageRes = await fetch(baseUrl, {
-    redirect: "manual",
-    headers: { "User-Agent": "Mozilla/5.0" },
+  // Step 1: GET the login page
+  const loginPageRes = await fetch(indexUrl, {
+    redirect: "follow",
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
   });
   const loginHtml = await loginPageRes.text();
+  const loginCookies = extractAllCookies(loginPageRes.headers);
 
-  let sessionId = extractSessionId(loginPageRes.headers.get("set-cookie"));
-
-  // Extract username field name (obfuscated)
+  // Extract username field name
   const fieldMatch = loginHtml.match(
     /<input[^>]*type=['"]text['"][^>]*name=['"]([^'"]+)['"]/
   );
   const usernameField = fieldMatch ? fieldMatch[1] : "user";
 
-  // Step 2: POST login using manually constructed multipart/form-data
-  const { body, boundary } = buildMultipartBody({
-    [usernameField]: username,
-    pass: password,
-    go: "Log in",
-  });
+  // Step 2: POST login form
+  // Try with native FormData (Web API available in Node 18+)
+  const formData = new FormData();
+  formData.append(usernameField, username);
+  formData.append("pass", password);
+  formData.append("go", "Log in");
 
-  const loginRes = await fetch(baseUrl, {
+  const loginRes = await fetch(indexUrl, {
     method: "POST",
     headers: {
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
-      "Cookie": `PHPSESSID=${sessionId}`,
-      "User-Agent": "Mozilla/5.0",
+      ...(loginCookies ? { "Cookie": loginCookies } : {}),
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     },
-    body,
+    body: formData,
     redirect: "manual",
   });
 
-  // Update session ID if a new one was set
-  const newSessionId = extractSessionId(loginRes.headers.get("set-cookie"));
-  if (newSessionId) sessionId = newSessionId;
+  // Collect all cookies from login response
+  const loginResCookies = extractAllCookies(loginRes.headers);
+  const allCookies = loginResCookies || loginCookies;
 
   const redirectLocation = loginRes.headers.get("location");
+  const loginStatus = loginRes.status;
 
-  // Check if login succeeded (redirect to kperiod.php or similar, NOT klogout.php)
+  // If we got a redirect, follow it
   if (redirectLocation && !redirectLocation.includes("klogout")) {
-    // Follow the redirect
     const redirectUrl = redirectLocation.startsWith("http")
       ? redirectLocation
       : new URL(redirectLocation, baseUrl).toString();
 
-    const redirectRes = await fetch(redirectUrl, {
+    const followRes = await fetch(redirectUrl, {
       headers: {
-        "Cookie": `PHPSESSID=${sessionId}`,
-        "User-Agent": "Mozilla/5.0",
+        "Cookie": allCookies,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
-      redirect: "manual",
+      redirect: "follow",
     });
-
-    const redirectSessionId = extractSessionId(redirectRes.headers.get("set-cookie"));
-    if (redirectSessionId) sessionId = redirectSessionId;
+    // Consume
+    await followRes.text();
   }
 
-  // If redirected to klogout, login failed - try urlencoded as fallback
-  if (redirectLocation && redirectLocation.includes("klogout")) {
-    // Reset: get a fresh session
-    const freshRes = await fetch(baseUrl, {
-      redirect: "manual",
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
-    await freshRes.text();
-    sessionId = extractSessionId(freshRes.headers.get("set-cookie")) || sessionId;
-
-    // Re-extract field name
-    const freshHtml = await (await fetch(baseUrl, {
-      headers: {
-        "Cookie": `PHPSESSID=${sessionId}`,
-        "User-Agent": "Mozilla/5.0",
-      },
-    })).text();
-    const freshFieldMatch = freshHtml.match(
-      /<input[^>]*type=['"]text['"][^>]*name=['"]([^'"]+)['"]/
-    );
-    const freshField = freshFieldMatch ? freshFieldMatch[1] : usernameField;
-
-    // Try URL-encoded POST
-    const urlEncodedBody = `${encodeURIComponent(freshField)}=${encodeURIComponent(username)}&pass=${encodeURIComponent(password)}&go=${encodeURIComponent("Log in")}`;
-
-    const loginRes2 = await fetch(baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": `PHPSESSID=${sessionId}`,
-        "User-Agent": "Mozilla/5.0",
-      },
-      body: urlEncodedBody,
-      redirect: "manual",
-    });
-
-    const newId2 = extractSessionId(loginRes2.headers.get("set-cookie"));
-    if (newId2) sessionId = newId2;
-
-    const redirect2 = loginRes2.headers.get("location");
-    if (redirect2 && !redirect2.includes("klogout")) {
-      const rUrl = redirect2.startsWith("http")
-        ? redirect2
-        : new URL(redirect2, baseUrl).toString();
-      await fetch(rUrl, {
-        headers: {
-          "Cookie": `PHPSESSID=${sessionId}`,
-          "User-Agent": "Mozilla/5.0",
-        },
-      });
-    } else {
-      throw new Error(
-        `Login failed with both multipart and urlencoded. ` +
-        `Multipart redirect: ${redirectLocation}. ` +
-        `URLEncoded redirect: ${redirect2 || "none"}. ` +
-        `Status: ${loginRes2.status}. Session: ${sessionId}. Field: ${freshField}`
-      );
-    }
-  }
-
-  // Step 3: Fetch the period page with authenticated session
+  // Step 3: Fetch the period page
   const periodRes = await fetch(periodUrl, {
     headers: {
-      "Cookie": `PHPSESSID=${sessionId}`,
-      "User-Agent": "Mozilla/5.0",
+      "Cookie": allCookies,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     },
     redirect: "follow",
   });
-
   const html = await periodRes.text();
 
+  // If still on login page, report detailed error
   if (html.includes("klogin.css")) {
     throw new Error(
-      `Session not authenticated after login. Session: ${sessionId}. Field: ${usernameField}`
+      `Login failed. POST to: ${indexUrl}. ` +
+      `Status: ${loginStatus}. ` +
+      `Redirect: ${redirectLocation || "none"}. ` +
+      `Cookies sent: ${loginCookies.substring(0, 80)}. ` +
+      `Cookies received: ${loginResCookies.substring(0, 80)}. ` +
+      `Field: ${usernameField}. ` +
+      `Login page URL: ${loginPageRes.url}`
     );
   }
 
