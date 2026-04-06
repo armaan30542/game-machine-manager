@@ -128,14 +128,20 @@ export async function GET() {
       formData.append(submitName, submitValue);
     }
 
-    const loginRes = await fetch(baseUrl, {
+    const postUrl = baseUrl + "index.php";
+
+    const loginRes = await fetch(postUrl, {
       method: "POST",
       redirect: "manual",
       headers: {
         Cookie: sessionId ? `PHPSESSID=${sessionId}` : "",
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         Referer: baseUrl,
+        Origin: new URL(baseUrl).origin,
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
       },
       body: formData,
     });
@@ -156,14 +162,15 @@ export async function GET() {
     const loginResBody = await loginRes.text();
 
     steps.step2_login_post = {
+      postUrl,
       status: loginRes.status,
       redirect: redirectUrl,
       newSessionId: sessionId ? sessionId.substring(0, 10) + "..." : "none",
       sentFields: [
         ...Object.keys(hiddenFields),
-        usernameField,
-        passwordField,
-        ...(submitName ? [submitName] : []),
+        usernameField + "=" + (username || ""),
+        passwordField + "=***",
+        ...(submitName ? [submitName + "=" + submitValue] : []),
       ],
       isLoginPage: loginResBody.includes("klogin.css"),
       responsePreview: loginResBody.substring(0, 500),
