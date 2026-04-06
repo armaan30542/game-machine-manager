@@ -24,6 +24,21 @@ function extractSessionId(setCookieHeader: string | null): string {
 }
 
 /**
+ * Build a multipart/form-data body manually for Node.js compatibility.
+ */
+function buildMultipartBody(fields: Record<string, string>): { body: string; boundary: string } {
+  const boundary = "----FormBoundary" + Math.random().toString(36).substring(2);
+  let body = "";
+  for (const [key, value] of Object.entries(fields)) {
+    body += `--${boundary}\r\n`;
+    body += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
+    body += `${value}\r\n`;
+  }
+  body += `--${boundary}--\r\n`;
+  return { body, boundary };
+}
+
+/**
  * Fetch revenue page from ksys22 using form-based login.
  */
 export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
@@ -52,17 +67,21 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   );
   const usernameField = fieldMatch ? fieldMatch[1] : "user";
 
-  // Step 2: POST login - use redirect: "manual" to capture cookies from 302
-  const formBody = `${encodeURIComponent(usernameField)}=${encodeURIComponent(username)}&pass=${encodeURIComponent(password)}&go=${encodeURIComponent("Log in")}`;
+  // Step 2: POST login using manually constructed multipart/form-data
+  const { body, boundary } = buildMultipartBody({
+    [usernameField]: username,
+    pass: password,
+    go: "Log in",
+  });
 
   const loginRes = await fetch(baseUrl, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
       "Cookie": `PHPSESSID=${sessionId}`,
       "User-Agent": "Mozilla/5.0",
     },
-    body: formBody,
+    body,
     redirect: "manual",
   });
 
@@ -70,9 +89,11 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   const newSessionId = extractSessionId(loginRes.headers.get("set-cookie"));
   if (newSessionId) sessionId = newSessionId;
 
-  // If login returned a redirect, follow it to establish the session
   const redirectLocation = loginRes.headers.get("location");
-  if (redirectLocation) {
+
+  // Check if login succeeded (redirect to kperiod.php or similar, NOT klogout.php)
+  if (redirectLocation && !redirectLocation.includes("klogout")) {
+    // Follow the redirect
     const redirectUrl = redirectLocation.startsWith("http")
       ? redirectLocation
       : new URL(redirectLocation, baseUrl).toString();
@@ -89,6 +110,66 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
     if (redirectSessionId) sessionId = redirectSessionId;
   }
 
+  // If redirected to klogout, login failed - try urlencoded as fallback
+  if (redirectLocation && redirectLocation.includes("klogout")) {
+    // Reset: get a fresh session
+    const freshRes = await fetch(baseUrl, {
+      redirect: "manual",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    await freshRes.text();
+    sessionId = extractSessionId(freshRes.headers.get("set-cookie")) || sessionId;
+
+    // Re-extract field name
+    const freshHtml = await (await fetch(baseUrl, {
+      headers: {
+        "Cookie": `PHPSESSID=${sessionId}`,
+        "User-Agent": "Mozilla/5.0",
+      },
+    })).text();
+    const freshFieldMatch = freshHtml.match(
+      /<input[^>]*type=['"]text['"][^>]*name=['"]([^'"]+)['"]/
+    );
+    const freshField = freshFieldMatch ? freshFieldMatch[1] : usernameField;
+
+    // Try URL-encoded POST
+    const urlEncodedBody = `${encodeURIComponent(freshField)}=${encodeURIComponent(username)}&pass=${encodeURIComponent(password)}&go=${encodeURIComponent("Log in")}`;
+
+    const loginRes2 = await fetch(baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": `PHPSESSID=${sessionId}`,
+        "User-Agent": "Mozilla/5.0",
+      },
+      body: urlEncodedBody,
+      redirect: "manual",
+    });
+
+    const newId2 = extractSessionId(loginRes2.headers.get("set-cookie"));
+    if (newId2) sessionId = newId2;
+
+    const redirect2 = loginRes2.headers.get("location");
+    if (redirect2 && !redirect2.includes("klogout")) {
+      const rUrl = redirect2.startsWith("http")
+        ? redirect2
+        : new URL(redirect2, baseUrl).toString();
+      await fetch(rUrl, {
+        headers: {
+          "Cookie": `PHPSESSID=${sessionId}`,
+          "User-Agent": "Mozilla/5.0",
+        },
+      });
+    } else {
+      throw new Error(
+        `Login failed with both multipart and urlencoded. ` +
+        `Multipart redirect: ${redirectLocation}. ` +
+        `URLEncoded redirect: ${redirect2 || "none"}. ` +
+        `Status: ${loginRes2.status}. Session: ${sessionId}. Field: ${freshField}`
+      );
+    }
+  }
+
   // Step 3: Fetch the period page with authenticated session
   const periodRes = await fetch(periodUrl, {
     headers: {
@@ -100,13 +181,9 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
 
   const html = await periodRes.text();
 
-  // Verify we got data, not the login page
   if (html.includes("klogin.css")) {
     throw new Error(
-      `Login failed. Status: ${loginRes.status}. ` +
-      `Redirect: ${redirectLocation || "none"}. ` +
-      `Session: ${sessionId}. ` +
-      `Field: ${usernameField}`
+      `Session not authenticated after login. Session: ${sessionId}. Field: ${usernameField}`
     );
   }
 
