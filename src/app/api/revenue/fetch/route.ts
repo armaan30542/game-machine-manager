@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { parseRevenueResponse } from "@/lib/revenue-parser";
 import { fetchRevenuePage } from "@/lib/revenue-fetch";
 
+export const maxDuration = 30;
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
 
