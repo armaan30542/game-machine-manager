@@ -4,25 +4,26 @@ import { parseRevenueResponse } from "@/lib/revenue-parser";
 
 export const maxDuration = 30;
 
+function getSession(res: Response): string {
+  const cookies: string[] = [];
+  if (res.headers.getSetCookie) cookies.push(...res.headers.getSetCookie());
+  res.headers.forEach((v, k) => {
+    if (k.toLowerCase() === "set-cookie" && !cookies.includes(v)) cookies.push(v);
+  });
+  for (const c of cookies) {
+    const m = c.match(/PHPSESSID=([^;]+)/);
+    if (m) return m[1];
+  }
+  return "";
+}
+
 export async function GET() {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+  if (profile?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data: location } = await supabase
     .from("locations")
@@ -31,9 +32,7 @@ export async function GET() {
     .limit(1)
     .single();
 
-  if (!location?.revenue_url) {
-    return NextResponse.json({ error: "No locations with revenue URLs" });
-  }
+  if (!location?.revenue_url) return NextResponse.json({ error: "No locations with revenue URLs" });
 
   const username = process.env.REVENUE_API_USERNAME || "";
   const password = process.env.REVENUE_API_PASSWORD || "";
@@ -41,166 +40,148 @@ export async function GET() {
     ? location.revenue_url
     : location.revenue_url + "/";
 
-  const results: Record<string, unknown> = {
-    location: `${location.location_number} - ${location.name}`,
-    revenue_url: location.revenue_url,
-    env_check: {
-      username_length: username.length,
-      username_first2: username.substring(0, 2),
-      password_length: password.length,
-      password_first2: password.substring(0, 2),
-    },
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   };
+
+  const log: unknown[] = [];
 
   try {
     // Step 1: GET login page
-    const loginPageRes = await fetch(baseUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      },
-    });
-
-    let sessionId = "";
-    if (loginPageRes.headers.getSetCookie) {
-      for (const c of loginPageRes.headers.getSetCookie()) {
-        const m = c.match(/PHPSESSID=([^;]+)/);
-        if (m) sessionId = m[1];
-      }
-    }
-
-    const loginHtml = await loginPageRes.text();
+    const loginRes = await fetch(baseUrl, { redirect: "manual", headers });
+    let sessionId = getSession(loginRes) || "";
+    const loginHtml = await loginRes.text();
 
     // Parse form
     const inputs = [...loginHtml.matchAll(/<input[^>]*>/gi)];
-    let usernameField = "";
-    let passwordField = "";
-    let submitName = "";
-    let submitValue = "";
-
+    let usernameField = "", passwordField = "", submitName = "", submitValue = "";
     for (const input of inputs) {
       const tag = input[0];
-      const typeMatch = tag.match(/type=['"]?(\w+)['"]?/i);
-      const nameMatch = tag.match(/name=['"]?([^'">\s]+)['"]?/i);
-      if (!nameMatch) continue;
-      const name = nameMatch[1];
-      const type = (typeMatch?.[1] || "text").toLowerCase();
-
-      if (type === "text") usernameField = name;
-      else if (type === "password") passwordField = name;
-      else if (type === "submit") {
-        submitName = name;
-        const valMatch =
-          tag.match(/value=['"]([^'"]*)['"]/i) || tag.match(/value=(\S+)/i);
-        submitValue = valMatch?.[1] || "";
+      const t = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
+      const n = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1] || "";
+      if (!n) continue;
+      if (t === "text") usernameField = n;
+      else if (t === "password") passwordField = n;
+      else if (t === "submit") {
+        submitName = n;
+        submitValue = (tag.match(/value=['"]([^'"]*)['"]/i) || tag.match(/value=(\S+)/i))?.[1] || "";
       }
     }
 
-    results.step1 = {
-      status: loginPageRes.status,
-      sessionId: sessionId.substring(0, 10) + "...",
-      usernameField,
-      passwordField,
-      submitField: `${submitName}=${submitValue}`,
-    };
+    log.push({
+      step: "1_GET_login",
+      status: loginRes.status,
+      session: sessionId.substring(0, 8),
+      fields: { usernameField, passwordField, submit: `${submitName}=${submitValue}` },
+    });
 
-    // Try login with BOTH base URL and index.php to compare
-    async function tryLogin(postUrl: string, label: string) {
-      const formData = new FormData();
-      formData.append(usernameField, username);
-      formData.append(passwordField, password);
-      if (submitName) formData.append(submitName, submitValue);
+    // Step 2: POST login
+    const formData = new FormData();
+    formData.append(usernameField, username);
+    formData.append(passwordField, password);
+    if (submitName) formData.append(submitName, submitValue);
 
-      const res = await fetch(postUrl, {
-        method: "POST",
+    const postRes = await fetch(baseUrl, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        ...headers,
+        Cookie: `PHPSESSID=${sessionId}`,
+        Referer: baseUrl,
+        Origin: new URL(baseUrl).origin,
+      },
+      body: formData,
+    });
+
+    const postSid = getSession(postRes);
+    if (postSid) sessionId = postSid;
+    const postRedirect = postRes.headers.get("location") || "";
+
+    log.push({
+      step: "2_POST_login",
+      status: postRes.status,
+      redirect: postRedirect,
+      newSession: postSid ? postSid.substring(0, 8) : "none",
+    });
+
+    // Step 3: Follow ALL redirects manually, collecting cookies
+    let currentRes = postRes;
+    let redirectCount = 0;
+    while (
+      redirectCount < 10 &&
+      (currentRes.status === 301 || currentRes.status === 302 || currentRes.status === 303)
+    ) {
+      const loc = currentRes.headers.get("location");
+      if (!loc) break;
+      await currentRes.text(); // consume body
+
+      const nextUrl = loc.startsWith("http") ? loc : new URL(loc, baseUrl).toString();
+      currentRes = await fetch(nextUrl, {
         redirect: "manual",
         headers: {
+          ...headers,
           Cookie: `PHPSESSID=${sessionId}`,
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
           Referer: baseUrl,
-          Origin: new URL(baseUrl).origin,
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        },
-        body: formData,
-      });
-
-      let newSessionId = "";
-      if (res.headers.getSetCookie) {
-        for (const c of res.headers.getSetCookie()) {
-          const m = c.match(/PHPSESSID=([^;]+)/);
-          if (m) newSessionId = m[1];
-        }
-      }
-
-      const redirect = res.headers.get("location") || "";
-      const body = await res.text();
-
-      return {
-        label,
-        postUrl,
-        status: res.status,
-        redirect,
-        newSession: newSessionId
-          ? newSessionId.substring(0, 10) + "..."
-          : "same",
-        isLoginPage: body.includes("klogin.css"),
-        hasTotals: body.includes("Totals"),
-        bodyLength: body.length,
-        bodyPreview: body.substring(0, 300),
-      };
-    }
-
-    const [resultBaseUrl, resultIndexPhp] = await Promise.all([
-      tryLogin(baseUrl, "POST to baseUrl"),
-      tryLogin(baseUrl + "index.php", "POST to index.php"),
-    ]);
-
-    results.step2_baseUrl = resultBaseUrl;
-    results.step2_indexPhp = resultIndexPhp;
-
-    // Step 3: If either login succeeded, try period page
-    const successLogin = !resultBaseUrl.isLoginPage
-      ? resultBaseUrl
-      : !resultIndexPhp.isLoginPage
-        ? resultIndexPhp
-        : null;
-
-    if (successLogin) {
-      const sid =
-        successLogin === resultBaseUrl
-          ? (resultBaseUrl.newSession !== "same"
-              ? resultBaseUrl.newSession
-              : sessionId)
-          : (resultIndexPhp.newSession !== "same"
-              ? resultIndexPhp.newSession
-              : sessionId);
-
-      const periodRes = await fetch(baseUrl + "kperiod.php", {
-        headers: {
-          Cookie: `PHPSESSID=${sid}`,
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         },
       });
-      const html = await periodRes.text();
-      results.step3 = {
-        status: periodRes.status,
-        isLoginPage: html.includes("klogin.css"),
-        hasTotals: html.includes("Totals"),
-        htmlLength: html.length,
-      };
-      if (html.includes("Totals")) {
-        results.parsed = parseRevenueResponse(html);
-      }
-    } else {
-      results.step3 = "skipped - both logins failed";
+
+      const rSid = getSession(currentRes);
+      if (rSid) sessionId = rSid;
+
+      redirectCount++;
+      log.push({
+        step: `3_redirect_${redirectCount}`,
+        url: nextUrl,
+        status: currentRes.status,
+        redirect: currentRes.headers.get("location") || "",
+        newSession: rSid ? rSid.substring(0, 8) : "same",
+      });
     }
 
-    return NextResponse.json(results);
+    const postBody = await currentRes.text();
+    log.push({
+      step: "4_final_after_redirects",
+      isLoginPage: postBody.includes("klogin.css"),
+      bodyLength: postBody.length,
+      bodyPreview: postBody.substring(0, 300),
+    });
+
+    // Step 5: GET kperiod.php
+    const periodRes = await fetch(baseUrl + "kperiod.php", {
+      headers: {
+        ...headers,
+        Cookie: `PHPSESSID=${sessionId}`,
+        Referer: baseUrl,
+      },
+    });
+
+    const periodHtml = await periodRes.text();
+    const isLoginPage = periodHtml.includes("klogin.css");
+    const hasTotals = periodHtml.includes("Totals");
+
+    log.push({
+      step: "5_GET_kperiod",
+      status: periodRes.status,
+      isLoginPage,
+      hasTotals,
+      htmlLength: periodHtml.length,
+      htmlPreview: periodHtml.substring(0, 500),
+    });
+
+    let parsed = null;
+    if (!isLoginPage && hasTotals) {
+      parsed = parseRevenueResponse(periodHtml);
+    }
+
+    return NextResponse.json({
+      location: `${location.location_number} - ${location.name}`,
+      env: { user_len: username.length, pass_len: password.length, user_start: username.substring(0, 2) },
+      success: !isLoginPage && hasTotals,
+      parsed,
+      log,
+    });
   } catch (err) {
-    results.error = String(err);
-    return NextResponse.json(results);
+    return NextResponse.json({ error: String(err), log });
   }
 }
