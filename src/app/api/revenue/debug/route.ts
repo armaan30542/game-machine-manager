@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { Client } from "undici";
+import { parseRevenueResponse } from "@/lib/revenue-parser";
 
 export const maxDuration = 30;
 
-function getSession(res: Response): string {
-  const cookies: string[] = [];
-  if (res.headers.getSetCookie) cookies.push(...res.headers.getSetCookie());
-  res.headers.forEach((v, k) => {
-    if (k.toLowerCase() === "set-cookie" && !cookies.includes(v)) cookies.push(v);
-  });
-  for (const c of cookies) {
+function extractSession(headers: Record<string, string | string[] | undefined>): string {
+  const raw = headers["set-cookie"];
+  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  for (const c of arr) {
     const m = c.match(/PHPSESSID=([^;]+)/);
     if (m) return m[1];
   }
@@ -35,32 +34,33 @@ export async function GET() {
 
   const username = process.env.REVENUE_API_USERNAME || "";
   const password = process.env.REVENUE_API_PASSWORD || "";
-  const baseUrl = location.revenue_url.endsWith("/")
+  const rawUrl = location.revenue_url.endsWith("/")
     ? location.revenue_url
     : location.revenue_url + "/";
-  const origin = new URL(baseUrl).origin;
+  const url = new URL(rawUrl);
+  const basePath = url.pathname;
+  const origin = url.origin;
 
   const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  const log: unknown[] = [];
 
-  const results: Record<string, unknown> = {
-    location: `${location.location_number} - ${location.name}`,
-    env: {
-      username_value: username,
-      password_value: password.substring(0, 3) + "***" + password.substring(password.length - 2),
-      password_length: password.length,
-    },
-  };
+  // Use a single undici Client = single TCP connection = same IP for all requests
+  const client = new Client(origin, { keepAliveTimeout: 30000 });
 
   try {
-    // GET login page
-    const loginRes = await fetch(baseUrl, { redirect: "manual", headers: { "User-Agent": UA } });
-    const sessionId = getSession(loginRes) || "";
-    const loginHtml = await loginRes.text();
+    // Step 1: GET login page
+    const loginRes = await client.request({
+      path: basePath,
+      method: "GET",
+      headers: { "User-Agent": UA },
+    });
+
+    let sessionId = extractSession(loginRes.headers as Record<string, string | string[] | undefined>);
+    const loginHtml = await loginRes.body.text();
 
     // Parse form
-    const inputs = [...loginHtml.matchAll(/<input[^>]*>/gi)];
     let uField = "", pField = "", sName = "", sValue = "";
-    for (const input of inputs) {
+    for (const input of [...loginHtml.matchAll(/<input[^>]*>/gi)]) {
       const tag = input[0];
       const t = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
       const n = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1] || "";
@@ -73,87 +73,137 @@ export async function GET() {
       }
     }
 
-    results.form = { usernameField: uField, passwordField: pField, submit: `${sName}=${sValue}`, session: sessionId.substring(0, 8) };
+    log.push({
+      step: "1_GET_login",
+      status: loginRes.statusCode,
+      session: sessionId.substring(0, 8),
+      usernameField: uField,
+      submit: `${sName}=${sValue}`,
+      credentials: { username, password_masked: password.substring(0, 4) + "..." },
+    });
 
-    // Try 3 different POST methods
-    async function tryMethod(label: string, contentType: string, body: string) {
-      // Get a fresh session for each attempt
-      const freshRes = await fetch(baseUrl, { redirect: "manual", headers: { "User-Agent": UA } });
-      const freshSid = getSession(freshRes) || "";
-      await freshRes.text();
+    // Step 2: POST with multipart
+    const boundary = "----WebKitFormBoundary" + Math.random().toString(36).slice(2, 18);
+    let body = "";
+    body += `--${boundary}\r\nContent-Disposition: form-data; name="${uField}"\r\n\r\n${username}\r\n`;
+    body += `--${boundary}\r\nContent-Disposition: form-data; name="${pField}"\r\n\r\n${password}\r\n`;
+    if (sName) body += `--${boundary}\r\nContent-Disposition: form-data; name="${sName}"\r\n\r\n${sValue}\r\n`;
+    body += `--${boundary}--\r\n`;
 
-      const freshHtml = await (await fetch(baseUrl, { headers: { "User-Agent": UA } })).text();
-      // Re-parse for fresh field name (it changes per session!)
-      let freshUField = "";
-      for (const input of [...freshHtml.matchAll(/<input[^>]*>/gi)]) {
-        const tag = input[0];
-        const t = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
-        const n = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1] || "";
-        if (t === "text") { freshUField = n; break; }
-      }
+    const bodyBuf = Buffer.from(body, "utf-8");
 
-      // Rebuild body with fresh field name
-      let actualBody = body;
-      if (freshUField && freshUField !== uField) {
-        actualBody = body.replace(uField, freshUField);
-      }
+    const postRes = await client.request({
+      path: basePath,
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": String(bodyBuf.length),
+        Cookie: `PHPSESSID=${sessionId}`,
+        "User-Agent": UA,
+        Referer: origin + basePath,
+        Origin: origin,
+      },
+      body: bodyBuf,
+    });
 
-      const res = await fetch(baseUrl, {
-        method: "POST",
-        redirect: "manual",
+    const postSid = extractSession(postRes.headers as Record<string, string | string[] | undefined>);
+    if (postSid) sessionId = postSid;
+    const postRedirect = (postRes.headers["location"] as string) || "";
+
+    log.push({
+      step: "2_POST_login",
+      status: postRes.statusCode,
+      redirect: postRedirect,
+      newSession: postSid ? postSid.substring(0, 8) : "none",
+      note: "SAME TCP connection as step 1",
+    });
+
+    // Step 3: Follow redirects through SAME connection
+    let currentRes = postRes;
+    let redirectCount = 0;
+
+    while (
+      redirectCount < 10 &&
+      (currentRes.statusCode === 301 || currentRes.statusCode === 302 || currentRes.statusCode === 303)
+    ) {
+      const loc = (currentRes.headers["location"] as string) || "";
+      if (!loc) break;
+      await currentRes.body.text();
+
+      let nextPath: string;
+      if (loc.startsWith("http")) nextPath = new URL(loc).pathname;
+      else if (loc.startsWith("/")) nextPath = loc;
+      else nextPath = basePath + loc;
+
+      currentRes = await client.request({
+        path: nextPath,
+        method: "GET",
         headers: {
-          "Content-Type": contentType,
-          Cookie: `PHPSESSID=${freshSid}`,
+          Cookie: `PHPSESSID=${sessionId}`,
           "User-Agent": UA,
-          Referer: baseUrl,
-          Origin: origin,
+          Referer: origin + basePath,
         },
-        body: actualBody,
       });
 
-      const redirect = res.headers.get("location") || "";
-      const newSid = getSession(res);
-      const resBody = await res.text();
+      const rSid = extractSession(currentRes.headers as Record<string, string | string[] | undefined>);
+      if (rSid) sessionId = rSid;
+      redirectCount++;
 
-      return {
-        label,
-        freshSession: freshSid.substring(0, 8),
-        freshUsernameField: freshUField || uField,
-        status: res.status,
-        redirect,
-        newSession: newSid ? newSid.substring(0, 8) : "none",
-        isLoginPage: resBody.includes("klogin.css"),
-        bodyPreview: resBody.substring(0, 200),
-      };
+      log.push({
+        step: `3_redirect_${redirectCount}`,
+        path: nextPath,
+        status: currentRes.statusCode,
+        redirect: (currentRes.headers["location"] as string) || "",
+        newSession: rSid ? rSid.substring(0, 8) : "same",
+      });
     }
 
-    // Method 1: URL-encoded
-    const urlEncoded = `${encodeURIComponent(uField)}=${encodeURIComponent(username)}&${encodeURIComponent(pField)}=${encodeURIComponent(password)}&${encodeURIComponent(sName)}=${encodeURIComponent(sValue)}`;
+    const finalBody = await currentRes.body.text();
+    log.push({
+      step: "4_after_redirects",
+      isLoginPage: finalBody.includes("klogin.css"),
+      bodyLength: finalBody.length,
+    });
 
-    // Method 2: Manual multipart (browser-like)
-    const boundary = "----WebKitFormBoundaryABC123";
-    let multipart = "";
-    multipart += `--${boundary}\r\nContent-Disposition: form-data; name="${uField}"\r\n\r\n${username}\r\n`;
-    multipart += `--${boundary}\r\nContent-Disposition: form-data; name="${pField}"\r\n\r\n${password}\r\n`;
-    multipart += `--${boundary}\r\nContent-Disposition: form-data; name="${sName}"\r\n\r\n${sValue}\r\n`;
-    multipart += `--${boundary}--\r\n`;
+    // Step 5: GET kperiod.php
+    const periodRes = await client.request({
+      path: basePath + "kperiod.php",
+      method: "GET",
+      headers: {
+        Cookie: `PHPSESSID=${sessionId}`,
+        "User-Agent": UA,
+        Referer: origin + basePath,
+      },
+    });
 
-    // Method 3: URL-encoded WITHOUT submit button
-    const urlEncodedNoSubmit = `${encodeURIComponent(uField)}=${encodeURIComponent(username)}&${encodeURIComponent(pField)}=${encodeURIComponent(password)}`;
+    const periodHtml = await periodRes.body.text();
+    const isLogin = periodHtml.includes("klogin.css");
+    const hasTotals = periodHtml.includes("Totals");
 
-    const [r1, r2, r3] = await Promise.all([
-      tryMethod("url-encoded", "application/x-www-form-urlencoded", urlEncoded),
-      tryMethod("multipart", `multipart/form-data; boundary=${boundary}`, multipart),
-      tryMethod("url-encoded-no-submit", "application/x-www-form-urlencoded", urlEncodedNoSubmit),
-    ]);
+    log.push({
+      step: "5_GET_kperiod",
+      status: periodRes.statusCode,
+      isLoginPage: isLogin,
+      hasTotals,
+      htmlLength: periodHtml.length,
+      preview: periodHtml.substring(0, 300),
+    });
 
-    results.method1_urlencoded = r1;
-    results.method2_multipart = r2;
-    results.method3_urlencoded_no_submit = r3;
+    let parsed = null;
+    if (!isLogin && hasTotals) {
+      parsed = parseRevenueResponse(periodHtml);
+    }
 
-    return NextResponse.json(results);
+    return NextResponse.json({
+      location: `${location.location_number} - ${location.name}`,
+      method: "undici single-connection",
+      success: !isLogin && hasTotals,
+      parsed,
+      log,
+    });
   } catch (err) {
-    results.error = String(err);
-    return NextResponse.json(results);
+    return NextResponse.json({ error: String(err), log });
+  } finally {
+    await client.close();
   }
 }
