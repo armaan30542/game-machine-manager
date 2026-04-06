@@ -69,28 +69,41 @@ export async function GET() {
 
     const loginHtml = await loginPageRes.text();
 
-    // Parse form fields
+    // Parse form fields including submit button
     const inputs = [...loginHtml.matchAll(/<input[^>]*>/gi)];
     const formFields: { type: string; name: string; value?: string }[] = [];
     let usernameField = "";
     let passwordField = "";
+    let submitName = "";
+    let submitValue = "";
     const hiddenFields: Record<string, string> = {};
 
     for (const input of inputs) {
       const tag = input[0];
       const typeMatch = tag.match(/type=['"]?(\w+)['"]?/i);
       const nameMatch = tag.match(/name=['"]?([^'">\s]+)['"]?/i);
-      const valueMatch = tag.match(/value=['"]?([^'">\s]*)['"]?/i);
 
       if (!nameMatch) continue;
       const name = nameMatch[1];
       const type = (typeMatch?.[1] || "text").toLowerCase();
 
-      formFields.push({ type, name, value: valueMatch?.[1] });
-
-      if (type === "text") usernameField = name;
-      else if (type === "password") passwordField = name;
-      else if (type === "hidden") hiddenFields[name] = valueMatch?.[1] || "";
+      if (type === "text") {
+        usernameField = name;
+        formFields.push({ type, name });
+      } else if (type === "password") {
+        passwordField = name;
+        formFields.push({ type, name });
+      } else if (type === "submit") {
+        submitName = name;
+        const valMatch = tag.match(/value=['"]([^'"]*)['"]/i) ||
+          tag.match(/value=(\S+)/i);
+        submitValue = valMatch?.[1] || "";
+        formFields.push({ type, name, value: submitValue });
+      } else if (type === "hidden") {
+        const valMatch = tag.match(/value=['"]?([^'">\s]*)['"]?/i);
+        hiddenFields[name] = valMatch?.[1] || "";
+        formFields.push({ type, name, value: hiddenFields[name] });
+      }
     }
 
     steps.step1_login_page = {
@@ -99,38 +112,32 @@ export async function GET() {
       formFields,
       usernameField,
       passwordField,
+      submitName,
+      submitValue,
       hiddenFields,
-      htmlPreview: loginHtml.substring(0, 500),
     };
 
-    // Step 2: POST login
-    const boundary =
-      "----FormBoundary" + Math.random().toString(36).slice(2);
-    const postFields: Record<string, string> = {
-      ...hiddenFields,
-      [usernameField]: username || "",
-      [passwordField]: password || "",
-    };
-
-    let body = "";
-    for (const [key, value] of Object.entries(postFields)) {
-      body += `--${boundary}\r\n`;
-      body += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
-      body += `${value}\r\n`;
+    // Step 2: POST login using native FormData
+    const formData = new FormData();
+    for (const [key, value] of Object.entries(hiddenFields)) {
+      formData.append(key, value);
     }
-    body += `--${boundary}--\r\n`;
+    formData.append(usernameField, username || "");
+    formData.append(passwordField, password || "");
+    if (submitName) {
+      formData.append(submitName, submitValue);
+    }
 
     const loginRes = await fetch(baseUrl, {
       method: "POST",
       redirect: "manual",
       headers: {
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
         Cookie: sessionId ? `PHPSESSID=${sessionId}` : "",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         Referer: baseUrl,
       },
-      body,
+      body: formData,
     });
 
     const loginResCookies: string[] = [];
@@ -152,7 +159,13 @@ export async function GET() {
       status: loginRes.status,
       redirect: redirectUrl,
       newSessionId: sessionId ? sessionId.substring(0, 10) + "..." : "none",
-      postFieldNames: Object.keys(postFields),
+      sentFields: [
+        ...Object.keys(hiddenFields),
+        usernameField,
+        passwordField,
+        ...(submitName ? [submitName] : []),
+      ],
+      isLoginPage: loginResBody.includes("klogin.css"),
       responsePreview: loginResBody.substring(0, 500),
     };
 
@@ -179,7 +192,7 @@ export async function GET() {
       htmlPreview: html.substring(0, 1000),
     };
 
-    if (!isLoginPage) {
+    if (!isLoginPage && hasTotals) {
       const parsed = parseRevenueResponse(html);
       steps.parsed = parsed;
     }
@@ -187,6 +200,7 @@ export async function GET() {
     return NextResponse.json({
       location: `${location.location_number} - ${location.name}`,
       revenue_url: location.revenue_url,
+      success: !isLoginPage && hasTotals,
       steps,
     });
   } catch (err) {

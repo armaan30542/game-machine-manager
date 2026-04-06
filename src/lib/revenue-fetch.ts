@@ -8,21 +8,21 @@ export function normalizeRevenueUrl(url: string): string {
 }
 
 /**
- * Extract form field names from ksys22 login page HTML.
- * The username field has an obfuscated name (hash), so we parse the HTML
- * to find the actual input names.
+ * Extract form field names and submit button from ksys22 login page HTML.
  */
 function parseLoginForm(html: string): {
   usernameField: string;
   passwordField: string;
+  submitName: string;
+  submitValue: string;
   hiddenFields: Record<string, string>;
-  action: string;
 } {
-  // Find all input fields in the form
   const inputs = [...html.matchAll(/<input[^>]*>/gi)];
 
   let usernameField = "";
   let passwordField = "";
+  let submitName = "";
+  let submitValue = "";
   const hiddenFields: Record<string, string> = {};
 
   for (const input of inputs) {
@@ -34,19 +34,23 @@ function parseLoginForm(html: string): {
     const name = nameMatch[1];
     const type = (typeMatch?.[1] || "text").toLowerCase();
 
-    if (type === "text") usernameField = name;
-    else if (type === "password") passwordField = name;
-    else if (type === "hidden") {
+    if (type === "text") {
+      usernameField = name;
+    } else if (type === "password") {
+      passwordField = name;
+    } else if (type === "submit") {
+      submitName = name;
+      // value can contain spaces like "Log in", so match within quotes
+      const valueMatch = tag.match(/value=['"]([^'"]*)['"]/i) ||
+        tag.match(/value=(\S+)/i);
+      submitValue = valueMatch?.[1] || "";
+    } else if (type === "hidden") {
       const valueMatch = tag.match(/value=['"]?([^'">\s]*)['"]?/i);
       hiddenFields[name] = valueMatch?.[1] || "";
     }
   }
 
-  // Find form action
-  const actionMatch = html.match(/<form[^>]*action=['"]?([^'">\s]*)['"]?/i);
-  const action = actionMatch?.[1] || "";
-
-  return { usernameField, passwordField, hiddenFields, action };
+  return { usernameField, passwordField, submitName, submitValue, hiddenFields };
 }
 
 /**
@@ -60,7 +64,6 @@ function extractSessionCookie(response: Response): string {
     }
   });
 
-  // Also check getSetCookie if available
   if (response.headers.getSetCookie) {
     cookies.push(...response.headers.getSetCookie());
   }
@@ -73,27 +76,9 @@ function extractSessionCookie(response: Response): string {
 }
 
 /**
- * Build a multipart/form-data body manually.
- */
-function buildMultipartBody(
-  fields: Record<string, string>,
-  boundary: string
-): string {
-  let body = "";
-  for (const [key, value] of Object.entries(fields)) {
-    body += `--${boundary}\r\n`;
-    body += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
-    body += `${value}\r\n`;
-  }
-  body += `--${boundary}--\r\n`;
-  return body;
-}
-
-/**
  * Fetch revenue page from ksys22 using native fetch with form-based login.
- * Steps:
  * 1. GET login page → extract PHPSESSID cookie + form field names
- * 2. POST login with multipart/form-data using extracted field names
+ * 2. POST login with native FormData (includes submit button field)
  * 3. GET kperiod.php with session cookie
  */
 export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
@@ -110,7 +95,7 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
       ? revenueUrl
       : revenueUrl + "/";
 
-  // Step 1: GET login page to get session cookie and form field names
+  // Step 1: GET login page
   const loginPageRes = await fetch(baseUrl, {
     redirect: "manual",
     headers: {
@@ -122,37 +107,44 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
   let sessionId = extractSessionCookie(loginPageRes);
   const loginHtml = await loginPageRes.text();
 
-  const { usernameField, passwordField, hiddenFields } =
+  const { usernameField, passwordField, submitName, submitValue, hiddenFields } =
     parseLoginForm(loginHtml);
 
   if (!usernameField || !passwordField) {
     throw new Error(
-      `Could not find login form fields. Username field: "${usernameField}", Password field: "${passwordField}"`
+      `Could not find login form fields. Username: "${usernameField}", Password: "${passwordField}"`
     );
   }
 
-  // Step 2: POST login with multipart/form-data
-  // Include any hidden fields from the form (CSRF tokens, etc.)
-  const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
-  const formFields: Record<string, string> = {
-    ...hiddenFields,
-    [usernameField]: username,
-    [passwordField]: password,
-  };
+  // Step 2: POST login using native FormData
+  // This ensures correct multipart/form-data encoding
+  const formData = new FormData();
 
-  const body = buildMultipartBody(formFields, boundary);
+  // Add hidden fields first
+  for (const [key, value] of Object.entries(hiddenFields)) {
+    formData.append(key, value);
+  }
+
+  // Add credentials
+  formData.append(usernameField, username);
+  formData.append(passwordField, password);
+
+  // Add submit button - PHP checks for this to know form was submitted
+  if (submitName) {
+    formData.append(submitName, submitValue);
+  }
 
   const loginRes = await fetch(baseUrl, {
     method: "POST",
     redirect: "manual",
     headers: {
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
       Cookie: sessionId ? `PHPSESSID=${sessionId}` : "",
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       Referer: baseUrl,
     },
-    body,
+    body: formData,
+    // Don't set Content-Type - fetch sets it automatically with correct boundary
   });
 
   // Update session cookie if a new one was set
