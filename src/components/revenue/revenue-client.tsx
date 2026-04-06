@@ -80,9 +80,22 @@ export function RevenueClient({
         const successes = data.results.filter(
           (r: { status: string }) => r.status === "success"
         ).length;
-        toast.success(
-          `Fetched revenue for ${successes}/${data.results.length} locations`
+        const errors = data.results.filter(
+          (r: { status: string }) => r.status === "error"
         );
+        const firstResult = data.results[0];
+        const hasData = firstResult?.cash_in > 0 || firstResult?.net_revenue > 0;
+        if (hasData) {
+          toast.success(
+            `Fetched revenue for ${successes}/${data.results.length} locations`
+          );
+        } else {
+          const preview = firstResult?.html_preview || "empty";
+          const errMsg = errors.length > 0 ? errors[0].error : "none";
+          toast.error(
+            `Data returned 0. First location: ${firstResult?.location_number}. Error: ${errMsg}. HTML starts with: ${preview.substring(0, 200)}`
+          );
+        }
         queryClient.invalidateQueries();
       } else {
         toast.error(data.error || "Failed to fetch revenue");

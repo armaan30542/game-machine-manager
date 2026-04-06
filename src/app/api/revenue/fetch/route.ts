@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { parseRevenueResponse } from "@/lib/revenue-parser";
+import { fetchRevenuePage } from "@/lib/revenue-fetch";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -38,18 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const username = process.env.REVENUE_API_USERNAME;
-    const password = process.env.REVENUE_API_PASSWORD;
-
-    const headers: Record<string, string> = {};
-    if (username && password) {
-      headers["Authorization"] = `Basic ${Buffer.from(
-        `${username}:${password}`
-      ).toString("base64")}`;
-    }
-
-    const response = await fetch(location.revenue_url, { headers });
-    const rawData = await response.text();
+    const rawData = await fetchRevenuePage(location.revenue_url);
 
     const parsed = parseRevenueResponse(rawData);
 

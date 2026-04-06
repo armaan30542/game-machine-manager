@@ -36,6 +36,8 @@ export async function middleware(request: NextRequest) {
     !user &&
     !pathname.startsWith("/login") &&
     !pathname.startsWith("/auth") &&
+    !pathname.startsWith("/forgot-password") &&
+    !pathname.startsWith("/reset-password") &&
     !pathname.startsWith("/set-password")
   ) {
     const url = request.nextUrl.clone();

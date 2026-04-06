@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { parseRevenueResponse } from "@/lib/revenue-parser";
+import { fetchRevenuePage } from "@/lib/revenue-fetch";
 
 export async function POST() {
   const supabase = await createClient();
@@ -32,23 +33,16 @@ export async function POST() {
     location_number: string;
     status: string;
     company_revenue?: number;
+    cash_in?: number;
+    cash_out?: number;
+    net_revenue?: number;
     error?: string;
+    html_preview?: string;
   }[] = [];
-
-  const username = process.env.REVENUE_API_USERNAME;
-  const password = process.env.REVENUE_API_PASSWORD;
 
   for (const loc of locations || []) {
     try {
-      const headers: Record<string, string> = {};
-      if (username && password) {
-        headers["Authorization"] = `Basic ${Buffer.from(
-          `${username}:${password}`
-        ).toString("base64")}`;
-      }
-
-      const response = await fetch(loc.revenue_url!, { headers });
-      const rawData = await response.text();
+      const rawData = await fetchRevenuePage(loc.revenue_url!);
 
       const parsed = parseRevenueResponse(rawData);
 
@@ -78,6 +72,10 @@ export async function POST() {
         location_number: loc.location_number,
         status: "success",
         company_revenue: companyRevenue,
+        cash_in: parsed.cash_in,
+        cash_out: parsed.cash_out,
+        net_revenue: parsed.net_revenue,
+        html_preview: rawData.substring(0, 500),
       });
 
       // Small delay to avoid rate limiting
