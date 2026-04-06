@@ -65,7 +65,7 @@ function parseDate(str: string): string {
 }
 
 function stripHtmlTags(str: string): string {
-  return str.replace(/<[^>]*>/g, "");
+  return str.replace(/<[^>]*>/g, " ");
 }
 
 function parseKsys22Html(html: string): RevenueData {
@@ -87,9 +87,9 @@ function parseKsys22Html(html: string): RevenueData {
   const totalsSection = clean.match(/Totals[\s\S]*/);
   if (totalsSection) {
     const totals = totalsSection[0];
-    const inMatch = totals.match(/In\s+\$?([\d,]+\.?\d*)/);
-    const outMatch = totals.match(/Out\s+\$?([\d,]+\.?\d*)/);
-    const netMatch = totals.match(/Net\s+\$?([\d,]+\.?\d*)/);
+    const inMatch = totals.match(/In\s+\$?\s*([\d,]+\.?\d*)/);
+    const outMatch = totals.match(/Out\s+\$?\s*([\d,]+\.?\d*)/);
+    const netMatch = totals.match(/Net\s+\$?\s*([\d,]+\.?\d*)/);
 
     if (inMatch) cashIn = Number(inMatch[1].replace(/,/g, ""));
     if (outMatch) cashOut = Number(outMatch[1].replace(/,/g, ""));
