@@ -50,12 +50,6 @@ function parseJsonRevenue(json: Record<string, unknown>): RevenueData {
   return { cash_in: cashIn, cash_out: cashOut, net_revenue: netRevenue, period_start: periodStart, period_end: periodEnd };
 }
 
-function parseDollar(str: string): number {
-  // Parse strings like "$27,901.00" or "In $27,901.00"
-  const match = str.match(/\$?([\d,]+\.?\d*)/);
-  return match ? Number(match[1].replace(/,/g, "")) : 0;
-}
-
 function parseDate(str: string): string {
   // Parse "03/31/26" -> "2026-03-31"
   const match = str.match(/(\d{2})\/(\d{2})\/(\d{2,4})/);
@@ -70,6 +64,10 @@ function parseDate(str: string): string {
   return `${year}-${month}-${day}`;
 }
 
+function stripHtmlTags(str: string): string {
+  return str.replace(/<[^>]*>/g, "");
+}
+
 function parseKsys22Html(html: string): RevenueData {
   const now = new Date();
   let cashIn = 0;
@@ -80,46 +78,29 @@ function parseKsys22Html(html: string): RevenueData {
     .split("T")[0];
   let periodEnd = now.toISOString().split("T")[0];
 
-  // Extract the Totals row values: "In $X", "Out $X", "Net $X"
-  const totalsInMatch = html.match(/In\s+\$?([\d,]+\.?\d*)/);
-  const totalsOutMatch = html.match(/Out\s+\$?([\d,]+\.?\d*)/);
-  const totalsNetMatch = html.match(/Net\s+\$?([\d,]+\.?\d*)/);
+  // Strip all HTML tags first so values like "$<font color="#000">11,630.71"
+  // become "$11,630.71"
+  const clean = stripHtmlTags(html);
 
-  if (totalsInMatch) {
-    cashIn = Number(totalsInMatch[1].replace(/,/g, ""));
-  }
-  if (totalsOutMatch) {
-    cashOut = Number(totalsOutMatch[1].replace(/,/g, ""));
-  }
-  if (totalsNetMatch) {
-    netRevenue = Number(totalsNetMatch[1].replace(/,/g, ""));
-  }
+  // Find the Totals row - it contains "Totals" followed by "In $X", "Out $X", "Net $X"
+  // We match from "Totals" to end to avoid hitting "Start M In" etc in data rows
+  const totalsSection = clean.match(/Totals[\s\S]*/);
+  if (totalsSection) {
+    const totals = totalsSection[0];
+    const inMatch = totals.match(/In\s+\$?([\d,]+\.?\d*)/);
+    const outMatch = totals.match(/Out\s+\$?([\d,]+\.?\d*)/);
+    const netMatch = totals.match(/Net\s+\$?([\d,]+\.?\d*)/);
 
-  // If totals row parsing didn't work, try summing Period In/Out/Net columns
-  // by looking for dollar amounts in table cells
-  if (cashIn === 0 && cashOut === 0) {
-    // Find all "Period In" values (column 8 in each game row)
-    const periodInMatches = html.match(/Period In[\s\S]*?<\/tr>/gi);
-    if (!periodInMatches) {
-      // Try finding all dollar amounts after "Period In" header
-      const allDollarMatches = [...html.matchAll(/\$([\d,]+\.?\d*)/g)];
-      // Sum them as fallback
-      for (const m of allDollarMatches) {
-        cashIn += Number(m[1].replace(/,/g, ""));
-      }
-    }
+    if (inMatch) cashIn = Number(inMatch[1].replace(/,/g, ""));
+    if (outMatch) cashOut = Number(outMatch[1].replace(/,/g, ""));
+    if (netMatch) netRevenue = Number(netMatch[1].replace(/,/g, ""));
   }
 
   // Extract period dates from the game rows
-  // Start Date is typically in the 2nd column, Last Read Date in the 3rd
-  // Look for date patterns like "03/31/26"
-  const dateMatches = [...html.matchAll(/(\d{2}\/\d{2}\/\d{2,4})/g)];
+  // Dates appear as "03/31/26" - first is Start Date, we want earliest and latest
+  const dateMatches = [...clean.matchAll(/(\d{2}\/\d{2}\/\d{2,4})/g)];
   if (dateMatches.length >= 2) {
-    // First date is the Start Date (period start)
     periodStart = parseDate(dateMatches[0][1]);
-    // Find the last "Last Read Date" which is the period end
-    // Last Read Dates appear as the second date in each row
-    // We want the latest one
     let latestEnd = periodStart;
     for (const m of dateMatches) {
       const parsed = parseDate(m[1]);
