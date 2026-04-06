@@ -33,7 +33,11 @@ export async function POST() {
     location_number: string;
     status: string;
     company_revenue?: number;
+    cash_in?: number;
+    cash_out?: number;
+    net_revenue?: number;
     error?: string;
+    html_preview?: string;
   }[] = [];
 
   for (const loc of locations || []) {
@@ -68,6 +72,10 @@ export async function POST() {
         location_number: loc.location_number,
         status: "success",
         company_revenue: companyRevenue,
+        cash_in: parsed.cash_in,
+        cash_out: parsed.cash_out,
+        net_revenue: parsed.net_revenue,
+        html_preview: rawData.substring(0, 500),
       });
 
       // Small delay to avoid rate limiting
