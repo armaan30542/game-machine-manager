@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { parseRevenueResponse } from "@/lib/revenue-parser";
 
 export const maxDuration = 30;
 
@@ -39,149 +38,122 @@ export async function GET() {
   const baseUrl = location.revenue_url.endsWith("/")
     ? location.revenue_url
     : location.revenue_url + "/";
+  const origin = new URL(baseUrl).origin;
 
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+  const results: Record<string, unknown> = {
+    location: `${location.location_number} - ${location.name}`,
+    env: {
+      username_value: username,
+      password_value: password.substring(0, 3) + "***" + password.substring(password.length - 2),
+      password_length: password.length,
+    },
   };
 
-  const log: unknown[] = [];
-
   try {
-    // Step 1: GET login page
-    const loginRes = await fetch(baseUrl, { redirect: "manual", headers });
-    let sessionId = getSession(loginRes) || "";
+    // GET login page
+    const loginRes = await fetch(baseUrl, { redirect: "manual", headers: { "User-Agent": UA } });
+    const sessionId = getSession(loginRes) || "";
     const loginHtml = await loginRes.text();
 
     // Parse form
     const inputs = [...loginHtml.matchAll(/<input[^>]*>/gi)];
-    let usernameField = "", passwordField = "", submitName = "", submitValue = "";
+    let uField = "", pField = "", sName = "", sValue = "";
     for (const input of inputs) {
       const tag = input[0];
       const t = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
       const n = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1] || "";
       if (!n) continue;
-      if (t === "text") usernameField = n;
-      else if (t === "password") passwordField = n;
+      if (t === "text") uField = n;
+      else if (t === "password") pField = n;
       else if (t === "submit") {
-        submitName = n;
-        submitValue = (tag.match(/value=['"]([^'"]*)['"]/i) || tag.match(/value=(\S+)/i))?.[1] || "";
+        sName = n;
+        sValue = (tag.match(/value=['"]([^'"]*)['"]/i) || tag.match(/value=(\S+)/i))?.[1] || "";
       }
     }
 
-    log.push({
-      step: "1_GET_login",
-      status: loginRes.status,
-      session: sessionId.substring(0, 8),
-      fields: { usernameField, passwordField, submit: `${submitName}=${submitValue}` },
-    });
+    results.form = { usernameField: uField, passwordField: pField, submit: `${sName}=${sValue}`, session: sessionId.substring(0, 8) };
 
-    // Step 2: POST login
-    const formData = new FormData();
-    formData.append(usernameField, username);
-    formData.append(passwordField, password);
-    if (submitName) formData.append(submitName, submitValue);
+    // Try 3 different POST methods
+    async function tryMethod(label: string, contentType: string, body: string) {
+      // Get a fresh session for each attempt
+      const freshRes = await fetch(baseUrl, { redirect: "manual", headers: { "User-Agent": UA } });
+      const freshSid = getSession(freshRes) || "";
+      await freshRes.text();
 
-    const postRes = await fetch(baseUrl, {
-      method: "POST",
-      redirect: "manual",
-      headers: {
-        ...headers,
-        Cookie: `PHPSESSID=${sessionId}`,
-        Referer: baseUrl,
-        Origin: new URL(baseUrl).origin,
-      },
-      body: formData,
-    });
+      const freshHtml = await (await fetch(baseUrl, { headers: { "User-Agent": UA } })).text();
+      // Re-parse for fresh field name (it changes per session!)
+      let freshUField = "";
+      for (const input of [...freshHtml.matchAll(/<input[^>]*>/gi)]) {
+        const tag = input[0];
+        const t = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
+        const n = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1] || "";
+        if (t === "text") { freshUField = n; break; }
+      }
 
-    const postSid = getSession(postRes);
-    if (postSid) sessionId = postSid;
-    const postRedirect = postRes.headers.get("location") || "";
+      // Rebuild body with fresh field name
+      let actualBody = body;
+      if (freshUField && freshUField !== uField) {
+        actualBody = body.replace(uField, freshUField);
+      }
 
-    log.push({
-      step: "2_POST_login",
-      status: postRes.status,
-      redirect: postRedirect,
-      newSession: postSid ? postSid.substring(0, 8) : "none",
-    });
-
-    // Step 3: Follow ALL redirects manually, collecting cookies
-    let currentRes = postRes;
-    let redirectCount = 0;
-    while (
-      redirectCount < 10 &&
-      (currentRes.status === 301 || currentRes.status === 302 || currentRes.status === 303)
-    ) {
-      const loc = currentRes.headers.get("location");
-      if (!loc) break;
-      await currentRes.text(); // consume body
-
-      const nextUrl = loc.startsWith("http") ? loc : new URL(loc, baseUrl).toString();
-      currentRes = await fetch(nextUrl, {
+      const res = await fetch(baseUrl, {
+        method: "POST",
         redirect: "manual",
         headers: {
-          ...headers,
-          Cookie: `PHPSESSID=${sessionId}`,
+          "Content-Type": contentType,
+          Cookie: `PHPSESSID=${freshSid}`,
+          "User-Agent": UA,
           Referer: baseUrl,
+          Origin: origin,
         },
+        body: actualBody,
       });
 
-      const rSid = getSession(currentRes);
-      if (rSid) sessionId = rSid;
+      const redirect = res.headers.get("location") || "";
+      const newSid = getSession(res);
+      const resBody = await res.text();
 
-      redirectCount++;
-      log.push({
-        step: `3_redirect_${redirectCount}`,
-        url: nextUrl,
-        status: currentRes.status,
-        redirect: currentRes.headers.get("location") || "",
-        newSession: rSid ? rSid.substring(0, 8) : "same",
-      });
+      return {
+        label,
+        freshSession: freshSid.substring(0, 8),
+        freshUsernameField: freshUField || uField,
+        status: res.status,
+        redirect,
+        newSession: newSid ? newSid.substring(0, 8) : "none",
+        isLoginPage: resBody.includes("klogin.css"),
+        bodyPreview: resBody.substring(0, 200),
+      };
     }
 
-    const postBody = await currentRes.text();
-    log.push({
-      step: "4_final_after_redirects",
-      isLoginPage: postBody.includes("klogin.css"),
-      bodyLength: postBody.length,
-      bodyPreview: postBody.substring(0, 300),
-    });
+    // Method 1: URL-encoded
+    const urlEncoded = `${encodeURIComponent(uField)}=${encodeURIComponent(username)}&${encodeURIComponent(pField)}=${encodeURIComponent(password)}&${encodeURIComponent(sName)}=${encodeURIComponent(sValue)}`;
 
-    // Step 5: GET kperiod.php
-    const periodRes = await fetch(baseUrl + "kperiod.php", {
-      headers: {
-        ...headers,
-        Cookie: `PHPSESSID=${sessionId}`,
-        Referer: baseUrl,
-      },
-    });
+    // Method 2: Manual multipart (browser-like)
+    const boundary = "----WebKitFormBoundaryABC123";
+    let multipart = "";
+    multipart += `--${boundary}\r\nContent-Disposition: form-data; name="${uField}"\r\n\r\n${username}\r\n`;
+    multipart += `--${boundary}\r\nContent-Disposition: form-data; name="${pField}"\r\n\r\n${password}\r\n`;
+    multipart += `--${boundary}\r\nContent-Disposition: form-data; name="${sName}"\r\n\r\n${sValue}\r\n`;
+    multipart += `--${boundary}--\r\n`;
 
-    const periodHtml = await periodRes.text();
-    const isLoginPage = periodHtml.includes("klogin.css");
-    const hasTotals = periodHtml.includes("Totals");
+    // Method 3: URL-encoded WITHOUT submit button
+    const urlEncodedNoSubmit = `${encodeURIComponent(uField)}=${encodeURIComponent(username)}&${encodeURIComponent(pField)}=${encodeURIComponent(password)}`;
 
-    log.push({
-      step: "5_GET_kperiod",
-      status: periodRes.status,
-      isLoginPage,
-      hasTotals,
-      htmlLength: periodHtml.length,
-      htmlPreview: periodHtml.substring(0, 500),
-    });
+    const [r1, r2, r3] = await Promise.all([
+      tryMethod("url-encoded", "application/x-www-form-urlencoded", urlEncoded),
+      tryMethod("multipart", `multipart/form-data; boundary=${boundary}`, multipart),
+      tryMethod("url-encoded-no-submit", "application/x-www-form-urlencoded", urlEncodedNoSubmit),
+    ]);
 
-    let parsed = null;
-    if (!isLoginPage && hasTotals) {
-      parsed = parseRevenueResponse(periodHtml);
-    }
+    results.method1_urlencoded = r1;
+    results.method2_multipart = r2;
+    results.method3_urlencoded_no_submit = r3;
 
-    return NextResponse.json({
-      location: `${location.location_number} - ${location.name}`,
-      env: { user_len: username.length, pass_len: password.length, user_start: username.substring(0, 2) },
-      success: !isLoginPage && hasTotals,
-      parsed,
-      log,
-    });
+    return NextResponse.json(results);
   } catch (err) {
-    return NextResponse.json({ error: String(err), log });
+    results.error = String(err);
+    return NextResponse.json(results);
   }
 }
