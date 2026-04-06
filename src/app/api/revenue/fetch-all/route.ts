@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { parseRevenueResponse } from "@/lib/revenue-parser";
-import { normalizeRevenueUrl, buildRevenueHeaders } from "@/lib/revenue-fetch";
+import { fetchRevenuePage } from "@/lib/revenue-fetch";
 
 export async function POST() {
   const supabase = await createClient();
@@ -36,14 +36,9 @@ export async function POST() {
     error?: string;
   }[] = [];
 
-  const headers = buildRevenueHeaders();
-
   for (const loc of locations || []) {
     try {
-      const url = normalizeRevenueUrl(loc.revenue_url!);
-
-      const response = await fetch(url, { headers });
-      const rawData = await response.text();
+      const rawData = await fetchRevenuePage(loc.revenue_url!);
 
       const parsed = parseRevenueResponse(rawData);
 
