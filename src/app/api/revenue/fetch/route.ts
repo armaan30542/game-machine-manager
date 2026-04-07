@@ -50,22 +50,25 @@ export async function POST(request: NextRequest) {
     const companyRevenue =
       (parsed.net_revenue - feeAmount) * (sharePercent / 100);
 
-    const { error } = await supabase.from("revenue_records").upsert(
-      {
-        location_id,
-        period_start: parsed.period_start,
-        period_end: parsed.period_end,
-        cash_in: parsed.cash_in,
-        cash_out: parsed.cash_out,
-        net_revenue: parsed.net_revenue,
-        fee_amount: feeAmount,
-        company_share_pct: sharePercent,
-        company_revenue: companyRevenue,
-        raw_data: rawData,
-        fetched_at: new Date().toISOString(),
-      },
-      { onConflict: "location_id,period_start,period_end" }
-    );
+    // Delete old records for this location to avoid duplicates
+    await supabase
+      .from("revenue_records")
+      .delete()
+      .eq("location_id", location_id);
+
+    const { error } = await supabase.from("revenue_records").insert({
+      location_id,
+      period_start: parsed.period_start,
+      period_end: parsed.period_end,
+      cash_in: parsed.cash_in,
+      cash_out: parsed.cash_out,
+      net_revenue: parsed.net_revenue,
+      fee_amount: feeAmount,
+      company_share_pct: sharePercent,
+      company_revenue: companyRevenue,
+      raw_data: rawData,
+      fetched_at: new Date().toISOString(),
+    });
 
     if (error) throw error;
 
