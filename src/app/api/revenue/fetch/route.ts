@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { parseRevenueResponse } from "@/lib/revenue-parser";
 import { fetchRevenuePage } from "@/lib/revenue-fetch";
 
@@ -40,9 +41,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  try {
-    const rawData = await fetchRevenuePage(location.revenue_url);
+  // Use service role client to bypass RLS for delete operations
+  const serviceClient = createAdminClient();
 
+  try {
+    // 1. Fetch and parse revenue data first
+    const rawData = await fetchRevenuePage(location.revenue_url);
     const parsed = parseRevenueResponse(rawData);
 
     const feeAmount = Number(location.fees);
@@ -50,27 +54,34 @@ export async function POST(request: NextRequest) {
     const companyRevenue =
       (parsed.net_revenue - feeAmount) * (sharePercent / 100);
 
-    // Delete old records for this location to avoid duplicates
-    await supabase
+    // 2. Only delete old records after we have valid new data
+    const { error: deleteError } = await serviceClient
       .from("revenue_records")
       .delete()
       .eq("location_id", location_id);
 
-    const { error } = await supabase.from("revenue_records").insert({
-      location_id,
-      period_start: parsed.period_start,
-      period_end: parsed.period_end,
-      cash_in: parsed.cash_in,
-      cash_out: parsed.cash_out,
-      net_revenue: parsed.net_revenue,
-      fee_amount: feeAmount,
-      company_share_pct: sharePercent,
-      company_revenue: companyRevenue,
-      raw_data: rawData,
-      fetched_at: new Date().toISOString(),
-    });
+    if (deleteError) {
+      throw new Error(`Delete failed: ${deleteError.message}`);
+    }
 
-    if (error) throw error;
+    // 3. Insert new record
+    const { error: insertError } = await serviceClient
+      .from("revenue_records")
+      .insert({
+        location_id,
+        period_start: parsed.period_start,
+        period_end: parsed.period_end,
+        cash_in: parsed.cash_in,
+        cash_out: parsed.cash_out,
+        net_revenue: parsed.net_revenue,
+        fee_amount: feeAmount,
+        company_share_pct: sharePercent,
+        company_revenue: companyRevenue,
+        raw_data: rawData,
+        fetched_at: new Date().toISOString(),
+      });
+
+    if (insertError) throw insertError;
 
     await supabase.from("audit_log").insert({
       action: "revenue_fetched",
