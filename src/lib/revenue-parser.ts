@@ -50,16 +50,19 @@ function parseJsonRevenue(json: Record<string, unknown>): RevenueData {
   return { cash_in: cashIn, cash_out: cashOut, net_revenue: netRevenue, period_start: periodStart, period_end: periodEnd };
 }
 
-function parseDate(str: string): string {
+function parseDate(str: string): string | null {
   // Parse "03/31/26" -> "2026-03-31"
   const match = str.match(/(\d{2})\/(\d{2})\/(\d{2,4})/);
-  if (!match) return new Date().toISOString().split("T")[0];
+  if (!match) return null;
 
   const month = match[1];
   const day = match[2];
   let year = match[3];
   if (year.length === 2) {
-    year = "20" + year;
+    // Pivot: 00-49 -> 2000-2049, 50-99 -> 1950-1999
+    // ksys22 uses 01/01/70 (=> 1970) as a placeholder for "never read"
+    const y = parseInt(year, 10);
+    year = y < 50 ? `20${year.padStart(2, "0")}` : `19${year}`;
   }
   return `${year}-${month}-${day}`;
 }
@@ -96,19 +99,23 @@ function parseKsys22Html(html: string): RevenueData {
     if (netMatch) netRevenue = Number(netMatch[1].replace(/,/g, ""));
   }
 
-  // Extract period dates from the game rows
-  // Dates appear as "03/31/26" - first is Start Date, we want earliest and latest
+  // Extract period dates from the game rows.
+  // Each row has: Game | Start Date | Last Read Date | ...
+  // ksys22 uses 01/01/70 as a placeholder for machines that have never been read,
+  // so we filter out any date before 2010. We take min/max of the remaining dates.
   const dateMatches = [...clean.matchAll(/(\d{2}\/\d{2}\/\d{2,4})/g)];
-  if (dateMatches.length >= 2) {
-    periodStart = parseDate(dateMatches[0][1]);
-    let latestEnd = periodStart;
-    for (const m of dateMatches) {
-      const parsed = parseDate(m[1]);
-      if (parsed > latestEnd) {
-        latestEnd = parsed;
-      }
+  const validDates: string[] = [];
+  for (const m of dateMatches) {
+    const parsed = parseDate(m[1]);
+    if (parsed && parsed >= "2010-01-01") {
+      validDates.push(parsed);
     }
-    periodEnd = latestEnd;
+  }
+
+  if (validDates.length > 0) {
+    validDates.sort();
+    periodStart = validDates[0];
+    periodEnd = validDates[validDates.length - 1];
   }
 
   // If net_revenue is 0 but we have cash_in and cash_out, calculate it
