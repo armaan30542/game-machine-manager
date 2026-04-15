@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -49,9 +49,15 @@ export function MachineDetailClient({
   isAdmin,
 }: MachineDetailClientProps) {
   const searchParams = useSearchParams();
-  const [editing, setEditing] = useState(
-    isAdmin && searchParams.get("edit") === "true"
-  );
+  const editParam = searchParams.get("edit") === "true";
+  const [editing, setEditing] = useState(isAdmin && editParam);
+
+  // useState's initializer only runs once. In the App Router, useSearchParams
+  // can return empty on the initial prerender/hydration, so ?edit=true is
+  // missed unless we sync in an effect.
+  useEffect(() => {
+    if (isAdmin && editParam) setEditing(true);
+  }, [isAdmin, editParam]);
 
   if (editing) {
     return (
