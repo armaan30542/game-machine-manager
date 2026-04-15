@@ -44,10 +44,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, ArrowLeftRight, Minus, Package } from "lucide-react";
+import { Plus, ArrowLeftRight, Minus, Package, MoreVertical } from "lucide-react";
 import {
   addMachineToLocation,
   removeMachineFromLocation,
@@ -148,16 +154,12 @@ export function LocationMachines({
                       </TableCell>
                       {isAdmin && !isClosed && (
                         <TableCell className="text-right">
-                          <div
-                            className="flex justify-end gap-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ReplaceMachineDialog
+                          <div className="flex justify-end">
+                            <MachineActionsMenu
                               machine={machine}
                               locationId={locationId}
                               inventoryMachines={inventoryMachines}
                             />
-                            <RemoveMachineDialog machine={machine} />
                           </div>
                         </TableCell>
                       )}
@@ -193,14 +195,11 @@ export function LocationMachines({
                       </p>
                     </div>
                     {isAdmin && !isClosed && (
-                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                        <ReplaceMachineDialog
-                          machine={machine}
-                          locationId={locationId}
-                          inventoryMachines={inventoryMachines}
-                        />
-                        <RemoveMachineDialog machine={machine} />
-                      </div>
+                      <MachineActionsMenu
+                        machine={machine}
+                        locationId={locationId}
+                        inventoryMachines={inventoryMachines}
+                      />
                     )}
                   </div>
                 </div>
@@ -351,10 +350,71 @@ function AddMachineDialog({
   );
 }
 
-function RemoveMachineDialog({ machine }: { machine: Machine }) {
+function MachineActionsMenu({
+  machine,
+  locationId,
+  inventoryMachines,
+}: {
+  machine: Machine;
+  locationId: string;
+  inventoryMachines: Machine[];
+}) {
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+
+  return (
+    // stopPropagation here prevents opening the dropdown (or clicking a menu
+    // item) from triggering the parent row's navigate-to-edit handler.
+    <div onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon" title="Actions" />}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setReplaceOpen(true)}>
+            <ArrowLeftRight className="h-4 w-4" />
+            Replace
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setRemoveOpen(true)}
+          >
+            <Minus className="h-4 w-4" />
+            Remove
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ReplaceMachineDialog
+        machine={machine}
+        locationId={locationId}
+        inventoryMachines={inventoryMachines}
+        open={replaceOpen}
+        onOpenChange={setReplaceOpen}
+      />
+      <RemoveMachineDialog
+        machine={machine}
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+      />
+    </div>
+  );
+}
+
+function RemoveMachineDialog({
+  machine,
+  open,
+  onOpenChange,
+}: {
+  machine: Machine;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState("");
   const queryClient = useQueryClient();
+  const controlled = open !== undefined;
 
   async function handleRemove() {
     setLoading(true);
@@ -372,10 +432,12 @@ function RemoveMachineDialog({ machine }: { machine: Machine }) {
   }
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="icon" title="Remove" />}>
-        <Minus className="h-4 w-4" />
-      </AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      {!controlled && (
+        <AlertDialogTrigger render={<Button variant="ghost" size="icon" title="Remove" />}>
+          <Minus className="h-4 w-4" />
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove Machine</AlertDialogTitle>
@@ -408,12 +470,21 @@ function ReplaceMachineDialog({
   machine,
   locationId,
   inventoryMachines,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   machine: Machine;
   locationId: string;
   inventoryMachines: Machine[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (controlledOnOpenChange ?? (() => {}))
+    : setInternalOpen;
   const [selectedReplacement, setSelectedReplacement] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -449,9 +520,11 @@ function ReplaceMachineDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="icon" title="Replace" />}>
-        <ArrowLeftRight className="h-4 w-4" />
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger render={<Button variant="ghost" size="icon" title="Replace" />}>
+          <ArrowLeftRight className="h-4 w-4" />
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Replace Machine</DialogTitle>
