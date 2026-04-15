@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,6 +36,7 @@ import { Search, Trash2 } from "lucide-react";
 import { deleteMachine } from "@/actions/machine-actions";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import type { Machine, Dispenser } from "@/types/database";
 import { CABINET_TYPES } from "@/lib/constants";
 
@@ -53,6 +53,7 @@ export function InventoryClient({
 }: InventoryClientProps) {
   const [search, setSearch] = useState("");
   const [cabinetFilter, setCabinetFilter] = useState<string>("all");
+  const router = useRouter();
 
   const filteredMachines = machines.filter((m) => {
     const matchesSearch =
@@ -125,14 +126,13 @@ export function InventoryClient({
                 </TableRow>
               ) : (
                 filteredMachines.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell>
-                      <Link
-                        href={`/machines/${m.id}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {m.machine_type}
-                      </Link>
+                  <TableRow
+                    key={m.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => router.push(`/machines/${m.id}?edit=true`)}
+                  >
+                    <TableCell className="font-medium text-primary">
+                      {m.machine_type}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{m.cabinet_type}</Badge>
@@ -144,7 +144,7 @@ export function InventoryClient({
                       {m.notes || "-"}
                     </TableCell>
                     {isAdmin && (
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <DeleteMachineButton machineId={m.id} machineName={m.machine_type} />
                       </TableCell>
                     )}
@@ -163,25 +163,27 @@ export function InventoryClient({
             </p>
           ) : (
             filteredMachines.map((m) => (
-              <Link key={m.id} href={`/machines/${m.id}`}>
-                <Card className="hover:bg-muted/50 transition-colors">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <p className="font-medium text-primary">
-                          {m.machine_type}
-                        </p>
-                        <Badge variant="outline" className="text-xs">
-                          {m.cabinet_type}
-                        </Badge>
-                        <p className="text-xs font-mono text-muted-foreground">
-                          SN: {m.serial_number}
-                        </p>
-                      </div>
+              <Card
+                key={m.id}
+                className="hover:bg-muted/50 transition-colors cursor-pointer"
+                onClick={() => router.push(`/machines/${m.id}?edit=true`)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <p className="font-medium text-primary">
+                        {m.machine_type}
+                      </p>
+                      <Badge variant="outline" className="text-xs">
+                        {m.cabinet_type}
+                      </Badge>
+                      <p className="text-xs font-mono text-muted-foreground">
+                        SN: {m.serial_number}
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                  </div>
+                </CardContent>
+              </Card>
             ))
           )}
         </div>

@@ -56,6 +56,7 @@ import {
 import { addDispenserToLocation } from "@/actions/dispenser-actions";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import type { Machine, Dispenser } from "@/types/database";
 import Link from "next/link";
 
@@ -78,6 +79,7 @@ export function LocationMachines({
   isAdmin,
   isClosed,
 }: LocationMachinesProps) {
+  const router = useRouter();
   return (
     <Card>
       <CardHeader>
@@ -127,19 +129,18 @@ export function LocationMachines({
                 </TableHeader>
                 <TableBody>
                   {machines.map((machine) => (
-                    <TableRow key={machine.id}>
+                    <TableRow
+                      key={machine.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => router.push(`/machines/${machine.id}?edit=true`)}
+                    >
                       <TableCell>
                         <Badge variant="outline">
                           {machine.position_at_location || "-"}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <Link
-                          href={`/machines/${machine.id}`}
-                          className="hover:underline text-primary"
-                        >
-                          {machine.machine_type}
-                        </Link>
+                      <TableCell className="font-medium text-primary">
+                        {machine.machine_type}
                       </TableCell>
                       <TableCell>{machine.cabinet_type}</TableCell>
                       <TableCell className="font-mono text-sm">
@@ -147,7 +148,10 @@ export function LocationMachines({
                       </TableCell>
                       {isAdmin && !isClosed && (
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
+                          <div
+                            className="flex justify-end gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <ReplaceMachineDialog
                               machine={machine}
                               locationId={locationId}
@@ -168,7 +172,8 @@ export function LocationMachines({
               {machines.map((machine) => (
                 <div
                   key={machine.id}
-                  className="rounded-lg border p-3 space-y-2"
+                  className="rounded-lg border p-3 space-y-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => router.push(`/machines/${machine.id}?edit=true`)}
                 >
                   <div className="flex items-start justify-between">
                     <div>
@@ -176,12 +181,9 @@ export function LocationMachines({
                         <Badge variant="outline" className="text-xs">
                           Pos {machine.position_at_location || "-"}
                         </Badge>
-                        <Link
-                          href={`/machines/${machine.id}`}
-                          className="font-medium text-primary hover:underline"
-                        >
+                        <span className="font-medium text-primary">
                           {machine.machine_type}
-                        </Link>
+                        </span>
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
                         {machine.cabinet_type}
@@ -191,7 +193,7 @@ export function LocationMachines({
                       </p>
                     </div>
                     {isAdmin && !isClosed && (
-                      <div className="flex gap-1">
+                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                         <ReplaceMachineDialog
                           machine={machine}
                           locationId={locationId}

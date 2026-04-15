@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +48,10 @@ export function MachineDetailClient({
   auditLog,
   isAdmin,
 }: MachineDetailClientProps) {
-  const [editing, setEditing] = useState(false);
+  const searchParams = useSearchParams();
+  const [editing, setEditing] = useState(
+    isAdmin && searchParams.get("edit") === "true"
+  );
 
   if (editing) {
     return (
