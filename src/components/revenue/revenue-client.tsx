@@ -24,7 +24,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RefreshCw, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  RefreshCw,
+  DollarSign,
+  TrendingUp,
+  TrendingDown,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RevenueRecord, Location } from "@/types/database";
@@ -49,6 +57,43 @@ function fmt(n: number): string {
   }).format(n);
 }
 
+type SortKey =
+  | "location"
+  | "state"
+  | "period"
+  | "cash_in"
+  | "cash_out"
+  | "net_revenue"
+  | "fee_amount"
+  | "company_share_pct"
+  | "company_revenue";
+
+type SortDir = "asc" | "desc";
+
+function getSortValue(r: RevenueRecordWithLocation, key: SortKey): string | number {
+  const loc = r.locations as Record<string, string> | null;
+  switch (key) {
+    case "location":
+      return loc?.location_number ?? "";
+    case "state":
+      return loc?.state ?? "";
+    case "period":
+      return r.period_start;
+    case "cash_in":
+      return Number(r.cash_in);
+    case "cash_out":
+      return Number(r.cash_out);
+    case "net_revenue":
+      return Number(r.net_revenue);
+    case "fee_amount":
+      return Number(r.fee_amount);
+    case "company_share_pct":
+      return Number(r.company_share_pct);
+    case "company_revenue":
+      return Number(r.company_revenue);
+  }
+}
+
 export function RevenueClient({
   revenueRecords,
   locations,
@@ -56,11 +101,22 @@ export function RevenueClient({
 }: RevenueClientProps) {
   const [fetching, setFetching] = useState(false);
   const [stateFilter, setStateFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("company_revenue");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const queryClient = useQueryClient();
 
   const filtered = revenueRecords.filter((r) => {
     if (stateFilter === "all") return true;
     return (r.locations as Record<string, string> | null)?.state === stateFilter;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const aVal = getSortValue(a, sortKey);
+    const bVal = getSortValue(b, sortKey);
+    const cmp = typeof aVal === "number" && typeof bVal === "number"
+      ? aVal - bVal
+      : String(aVal).localeCompare(String(bVal));
+    return sortDir === "asc" ? cmp : -cmp;
   });
 
   const totalCashIn = filtered.reduce((s, r) => s + Number(r.cash_in), 0);
@@ -70,6 +126,22 @@ export function RevenueClient({
     (s, r) => s + Number(r.company_revenue),
     0
   );
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "location" || key === "state" || key === "period" ? "asc" : "desc");
+    }
+  }
+
+  function SortIcon({ column }: { column: SortKey }) {
+    if (sortKey !== column) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-40" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="ml-1 h-3 w-3" />
+      : <ArrowDown className="ml-1 h-3 w-3" />;
+  }
 
   async function handleFetchAll() {
     setFetching(true);
@@ -138,7 +210,9 @@ export function RevenueClient({
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{fmt(totalNet)}</div>
+            <div className={`text-2xl font-bold ${totalNet < 0 ? "text-red-600" : ""}`}>
+              {fmt(totalNet)}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -184,19 +258,32 @@ export function RevenueClient({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Location</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Period</TableHead>
-              <TableHead className="text-right">Cash In</TableHead>
-              <TableHead className="text-right">Cash Out</TableHead>
-              <TableHead className="text-right">Net Revenue</TableHead>
-              <TableHead className="text-right">Fee</TableHead>
-              <TableHead className="text-right">Share %</TableHead>
-              <TableHead className="text-right">Company Revenue</TableHead>
+              {([
+                ["location", "Location"],
+                ["state", "State"],
+                ["period", "Period"],
+                ["cash_in", "Cash In"],
+                ["cash_out", "Cash Out"],
+                ["net_revenue", "Net Revenue"],
+                ["fee_amount", "Fee"],
+                ["company_share_pct", "Share %"],
+                ["company_revenue", "Company Revenue"],
+              ] as [SortKey, string][]).map(([key, label]) => (
+                <TableHead
+                  key={key}
+                  className={`${key !== "location" && key !== "state" && key !== "period" ? "text-right" : ""} cursor-pointer select-none hover:bg-muted/50`}
+                  onClick={() => handleSort(key)}
+                >
+                  <span className="inline-flex items-center">
+                    {label}
+                    <SortIcon column={key} />
+                  </span>
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={9}
@@ -207,40 +294,44 @@ export function RevenueClient({
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">
-                    {(r.locations as Record<string, string> | null)?.location_number}{" "}
-                    - {(r.locations as Record<string, string> | null)?.name}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {(r.locations as Record<string, string> | null)?.state}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {r.period_start} to {r.period_end}
-                  </TableCell>
-                  <TableCell className="text-right text-green-600">
-                    {fmt(Number(r.cash_in))}
-                  </TableCell>
-                  <TableCell className="text-right text-red-600">
-                    {fmt(Number(r.cash_out))}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {fmt(Number(r.net_revenue))}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {fmt(Number(r.fee_amount))}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {r.company_share_pct}%
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-primary">
-                    {fmt(Number(r.company_revenue))}
-                  </TableCell>
-                </TableRow>
-              ))
+              sorted.map((r) => {
+                const netNeg = Number(r.net_revenue) < 0;
+                const compNeg = Number(r.company_revenue) < 0;
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-medium">
+                      {(r.locations as Record<string, string> | null)?.location_number}{" "}
+                      - {(r.locations as Record<string, string> | null)?.name}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {(r.locations as Record<string, string> | null)?.state}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {r.period_start} to {r.period_end}
+                    </TableCell>
+                    <TableCell className="text-right text-green-600">
+                      {fmt(Number(r.cash_in))}
+                    </TableCell>
+                    <TableCell className="text-right text-red-600">
+                      {fmt(Number(r.cash_out))}
+                    </TableCell>
+                    <TableCell className={`text-right font-medium ${netNeg ? "text-red-600" : ""}`}>
+                      {fmt(Number(r.net_revenue))}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmt(Number(r.fee_amount))}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {r.company_share_pct}%
+                    </TableCell>
+                    <TableCell className={`text-right font-bold ${compNeg ? "text-red-600" : "text-primary"}`}>
+                      {fmt(Number(r.company_revenue))}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

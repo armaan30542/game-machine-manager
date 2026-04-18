@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/card";
 import { createMachine, updateMachine } from "@/actions/machine-actions";
 import { toast } from "sonner";
-import { MACHINE_TYPES, CABINET_TYPES } from "@/lib/constants";
+import { CABINET_TYPES } from "@/lib/constants";
+import { useMachineTypes } from "@/hooks/use-machine-types";
 import type { Machine } from "@/types/database";
 import { MachinePhoto } from "@/components/machines/machine-photo";
 
@@ -36,6 +37,7 @@ export function MachineForm({ machine }: MachineFormProps) {
   const isEdit = !!machine;
   const [loading, setLoading] = useState(false);
   const [machineSearch, setMachineSearch] = useState("");
+  const { data: machineTypes = [] } = useMachineTypes();
 
   const [form, setForm] = useState({
     machine_type: machine?.machine_type ?? "",
@@ -48,7 +50,7 @@ export function MachineForm({ machine }: MachineFormProps) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  const filteredTypes = MACHINE_TYPES.filter((t) =>
+  const filteredTypes = machineTypes.filter((t) =>
     t.toLowerCase().includes(machineSearch.toLowerCase())
   );
 
@@ -60,7 +62,7 @@ export function MachineForm({ machine }: MachineFormProps) {
       const result = await updateMachine(machine!.id, {
         machine_type: form.machine_type,
         cabinet_type: form.cabinet_type,
-        serial_number: form.serial_number,
+        serial_number: form.serial_number.trim() || null,
         notes: form.notes || null,
       });
       if (result.error) {
@@ -74,7 +76,7 @@ export function MachineForm({ machine }: MachineFormProps) {
       const result = await createMachine({
         machine_type: form.machine_type,
         cabinet_type: form.cabinet_type,
-        serial_number: form.serial_number,
+        serial_number: form.serial_number.trim() || null,
         notes: form.notes || undefined,
       });
       if (result.error) {
@@ -142,13 +144,12 @@ export function MachineForm({ machine }: MachineFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="serial_number">Serial Number *</Label>
+            <Label htmlFor="serial_number">Serial / Asset Tag Number</Label>
             <Input
               id="serial_number"
               value={form.serial_number}
               onChange={(e) => updateField("serial_number", e.target.value)}
-              placeholder="Enter serial number"
-              required
+              placeholder="Optional"
             />
           </div>
 
@@ -188,8 +189,7 @@ export function MachineForm({ machine }: MachineFormProps) {
           disabled={
             loading ||
             !form.machine_type ||
-            !form.cabinet_type ||
-            !form.serial_number
+            !form.cabinet_type
           }
         >
           {loading

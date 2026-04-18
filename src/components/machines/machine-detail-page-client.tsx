@@ -78,7 +78,7 @@ export function MachineDetailPageClient({ id }: { id: string }) {
             </Link>
           )}
           <span className="text-sm text-muted-foreground">/</span>
-          <span className="text-sm font-medium">{machine.serial_number}</span>
+          <span className="text-sm font-medium">{machine.serial_number ?? machine.machine_type}</span>
         </div>
         <h1 className="text-2xl font-bold">{machine.machine_type}</h1>
         <div className="flex items-center gap-2 mt-1">

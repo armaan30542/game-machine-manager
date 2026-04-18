@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 export async function createMachine(formData: {
   machine_type: string;
   cabinet_type: string;
-  serial_number: string;
+  serial_number: string | null;
   notes?: string;
 }) {
   const supabase = await createClient();

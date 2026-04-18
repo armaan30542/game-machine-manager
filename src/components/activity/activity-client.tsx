@@ -106,11 +106,39 @@ interface ActivityClientProps {
   auditLog: AuditLogEntry[];
 }
 
+const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
+  { label: "All", actions: null },
+  {
+    label: "Inventory Changes",
+    actions: ["machine_created", "machine_deleted"],
+  },
+  {
+    label: "Location Activity",
+    actions: [
+      "machine_added_to_location",
+      "machine_removed_from_location",
+      "machine_replaced",
+      "location_created",
+      "location_edited",
+      "location_closed",
+      "location_reopened",
+    ],
+  },
+  { label: "Revenue", actions: ["revenue_fetched"] },
+];
+
 export function ActivityClient({ auditLog }: ActivityClientProps) {
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
+  const [preset, setPreset] = useState(0);
+
+  const activePreset = PRESET_FILTERS[preset];
 
   const filtered = auditLog.filter((entry) => {
+    if (activePreset.actions && !activePreset.actions.includes(entry.action)) {
+      return false;
+    }
+
     const matchesAction =
       actionFilter === "all" || entry.action === actionFilter;
 
@@ -127,10 +155,35 @@ export function ActivityClient({ auditLog }: ActivityClientProps) {
     return matchesAction && matchesSearch;
   });
 
-  const uniqueActions = [...new Set(auditLog.map((e) => e.action))];
+  const uniqueActions = [...new Set(
+    (activePreset.actions
+      ? auditLog.filter((e) => activePreset.actions!.includes(e.action))
+      : auditLog
+    ).map((e) => e.action)
+  )];
 
   return (
     <div className="space-y-4">
+      {/* Preset filter tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {PRESET_FILTERS.map((pf, i) => (
+          <button
+            key={pf.label}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
+              preset === i
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:bg-muted"
+            }`}
+            onClick={() => {
+              setPreset(i);
+              setActionFilter("all");
+            }}
+          >
+            {pf.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

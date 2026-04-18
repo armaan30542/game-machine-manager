@@ -57,7 +57,7 @@ export interface Machine {
   id: string;
   machine_type: string;
   cabinet_type: string;
-  serial_number: string;
+  serial_number: string | null;
   location_id: string | null;
   position_at_location: number | null;
   photo_path: string | null;

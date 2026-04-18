@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { createLocation, updateLocation } from "@/actions/location-actions";
+import {
+  createLocation,
+  updateLocation,
+  getNextLocationNumber,
+} from "@/actions/location-actions";
 import { toast } from "sonner";
 import type { Location } from "@/types/database";
 
@@ -32,9 +36,9 @@ export function LocationForm({ location }: LocationFormProps) {
   const router = useRouter();
   const isEdit = !!location;
   const [loading, setLoading] = useState(false);
+  const [previewNumber, setPreviewNumber] = useState<string>("");
 
   const [form, setForm] = useState({
-    location_number: location?.location_number ?? "",
     name: location?.name ?? "",
     address_line1: location?.address_line1 ?? "",
     address_line2: location?.address_line2 ?? "",
@@ -52,6 +56,13 @@ export function LocationForm({ location }: LocationFormProps) {
     revenue_url: location?.revenue_url ?? "",
     comments: location?.comments ?? "",
   });
+
+  useEffect(() => {
+    if (isEdit) return;
+    getNextLocationNumber(form.state as "VA" | "TX").then((res) => {
+      if (res.number) setPreviewNumber(res.number);
+    });
+  }, [form.state, isEdit]);
 
   function updateField(field: string, value: unknown) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -106,17 +117,22 @@ export function LocationForm({ location }: LocationFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="location_number">Location Number *</Label>
-              <Input
-                id="location_number"
-                value={form.location_number}
-                onChange={(e) => updateField("location_number", e.target.value)}
-                placeholder="e.g. VA019"
-                required
-                disabled={isEdit}
-              />
-            </div>
+            {isEdit ? (
+              <div className="space-y-2">
+                <Label>Location Number</Label>
+                <Input value={location!.location_number} disabled />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Location Number</Label>
+                <p className="text-sm font-mono font-medium border rounded-md px-3 py-2 bg-muted">
+                  {previewNumber || "..."}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Auto-generated from state
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input
