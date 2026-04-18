@@ -59,7 +59,7 @@ export function InventoryClient({
     const matchesSearch =
       search === "" ||
       m.machine_type.toLowerCase().includes(search.toLowerCase()) ||
-      m.serial_number.toLowerCase().includes(search.toLowerCase());
+      (m.serial_number ?? "").toLowerCase().includes(search.toLowerCase());
     const matchesCabinet =
       cabinetFilter === "all" || m.cabinet_type === cabinetFilter;
     return matchesSearch && matchesCabinet;
@@ -138,7 +138,7 @@ export function InventoryClient({
                       <Badge variant="outline">{m.cabinet_type}</Badge>
                     </TableCell>
                     <TableCell className="font-mono text-sm">
-                      {m.serial_number}
+                      {m.serial_number ?? "—"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                       {m.notes || "-"}
@@ -178,7 +178,7 @@ export function InventoryClient({
                         {m.cabinet_type}
                       </Badge>
                       <p className="text-xs font-mono text-muted-foreground">
-                        SN: {m.serial_number}
+                        SN: {m.serial_number ?? "—"}
                       </p>
                     </div>
                   </div>

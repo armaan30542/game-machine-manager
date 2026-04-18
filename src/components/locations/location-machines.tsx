@@ -150,7 +150,7 @@ export function LocationMachines({
                       </TableCell>
                       <TableCell>{machine.cabinet_type}</TableCell>
                       <TableCell className="font-mono text-sm">
-                        {machine.serial_number}
+                        {machine.serial_number ?? "—"}
                       </TableCell>
                       {isAdmin && !isClosed && (
                         <TableCell className="text-right">
@@ -191,7 +191,7 @@ export function LocationMachines({
                         {machine.cabinet_type}
                       </p>
                       <p className="text-xs font-mono text-muted-foreground">
-                        SN: {machine.serial_number}
+                        SN: {machine.serial_number ?? "—"}
                       </p>
                     </div>
                     {isAdmin && !isClosed && (
@@ -236,7 +236,7 @@ function AddMachineDialog({
   const filteredInventory = inventoryMachines.filter(
     (m) =>
       m.machine_type.toLowerCase().includes(search.toLowerCase()) ||
-      m.serial_number.toLowerCase().includes(search.toLowerCase())
+      (m.serial_number ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   async function handleAdd() {
@@ -317,7 +317,7 @@ function AddMachineDialog({
                       ({m.cabinet_type})
                     </span>
                     <span className="text-xs font-mono ml-2">
-                      {m.serial_number}
+                      {m.serial_number ?? "—"}
                     </span>
                   </button>
                 ))
@@ -442,8 +442,9 @@ function RemoveMachineDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Remove Machine</AlertDialogTitle>
           <AlertDialogDescription>
-            This will move {machine.machine_type} (SN: {machine.serial_number})
-            back to inventory.
+            This will move {machine.machine_type}
+            {machine.serial_number ? ` (SN: ${machine.serial_number})` : ""}
+            {" "}back to inventory.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="py-4">
@@ -494,7 +495,7 @@ function ReplaceMachineDialog({
   const filteredInventory = inventoryMachines.filter(
     (m) =>
       m.machine_type.toLowerCase().includes(search.toLowerCase()) ||
-      m.serial_number.toLowerCase().includes(search.toLowerCase())
+      (m.serial_number ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   async function handleReplace() {
@@ -529,7 +530,8 @@ function ReplaceMachineDialog({
         <DialogHeader>
           <DialogTitle>Replace Machine</DialogTitle>
           <DialogDescription>
-            Replace {machine.machine_type} (SN: {machine.serial_number}) at
+            Replace {machine.machine_type}
+            {machine.serial_number ? ` (SN: ${machine.serial_number})` : ""} at
             position {machine.position_at_location} with a machine from
             inventory. The current machine will be returned to inventory.
           </DialogDescription>
@@ -561,7 +563,7 @@ function ReplaceMachineDialog({
                       ({m.cabinet_type})
                     </span>
                     <span className="text-xs font-mono ml-2">
-                      {m.serial_number}
+                      {m.serial_number ?? "—"}
                     </span>
                   </button>
                 ))

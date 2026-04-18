@@ -101,7 +101,7 @@ export function MachineDetailClient({
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Serial Number</p>
-                <p className="font-mono">{machine.serial_number}</p>
+                <p className="font-mono">{machine.serial_number ?? "—"}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Status</p>

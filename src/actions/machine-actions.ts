@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 export async function createMachine(formData: {
   machine_type: string;
   cabinet_type: string;
-  serial_number?: string;
+  serial_number: string | null;
   notes?: string;
 }) {
   const supabase = await createClient();
@@ -17,11 +17,7 @@ export async function createMachine(formData: {
 
   const { data, error } = await supabase
     .from("machines")
-    .insert({
-      ...formData,
-      serial_number: formData.serial_number || null,
-      location_id: null,
-    })
+    .insert({ ...formData, location_id: null })
     .select("id")
     .single();
 

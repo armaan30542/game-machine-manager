@@ -62,7 +62,7 @@ export function MachineForm({ machine }: MachineFormProps) {
       const result = await updateMachine(machine!.id, {
         machine_type: form.machine_type,
         cabinet_type: form.cabinet_type,
-        serial_number: form.serial_number || null,
+        serial_number: form.serial_number.trim() || null,
         notes: form.notes || null,
       });
       if (result.error) {
@@ -76,7 +76,7 @@ export function MachineForm({ machine }: MachineFormProps) {
       const result = await createMachine({
         machine_type: form.machine_type,
         cabinet_type: form.cabinet_type,
-        serial_number: form.serial_number || undefined,
+        serial_number: form.serial_number.trim() || null,
         notes: form.notes || undefined,
       });
       if (result.error) {
