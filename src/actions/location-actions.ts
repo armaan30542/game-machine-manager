@@ -3,8 +3,32 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
+export async function getNextLocationNumber(state: "VA" | "TX") {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated", number: "" };
+
+  const { data: locations } = await supabase
+    .from("locations")
+    .select("location_number")
+    .ilike("location_number", `${state}%`);
+
+  let maxSeq = 0;
+  for (const loc of locations || []) {
+    const match = loc.location_number.match(/(\d+)$/);
+    if (match) {
+      const seq = parseInt(match[1], 10);
+      if (seq > maxSeq) maxSeq = seq;
+    }
+  }
+
+  const next = String(maxSeq + 1).padStart(3, "0");
+  return { number: `${state}-${next}` };
+}
+
 export async function createLocation(formData: {
-  location_number: string;
   name: string;
   address_line1: string;
   address_line2?: string;
@@ -28,19 +52,36 @@ export async function createLocation(formData: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  const { data, error } = await supabase
-    .from("locations")
-    .insert(formData)
-    .select("id")
-    .single();
+  // Auto-generate location number with retry on unique violation
+  let locationNumber = "";
+  let data: { id: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await getNextLocationNumber(formData.state);
+    if (result.error) return { error: result.error };
+    locationNumber = result.number;
 
-  if (error) return { error: error.message };
+    const insertResult = await supabase
+      .from("locations")
+      .insert({ ...formData, location_number: locationNumber })
+      .select("id")
+      .single();
+
+    if (!insertResult.error) {
+      data = insertResult.data;
+      break;
+    }
+    if (!insertResult.error.message.includes("unique") && !insertResult.error.message.includes("duplicate")) {
+      return { error: insertResult.error.message };
+    }
+  }
+
+  if (!data) return { error: "Failed to generate unique location number" };
 
   await supabase.from("audit_log").insert({
     action: "location_created",
     performed_by: user.id,
     location_id: data.id,
-    details: { location_number: formData.location_number },
+    details: { location_number: locationNumber },
   });
 
   revalidatePath("/locations");
