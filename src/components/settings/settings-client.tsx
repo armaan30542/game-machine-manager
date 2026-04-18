@@ -52,10 +52,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { UserPlus, MoreHorizontal, KeyRound, Trash2, Shield } from "lucide-react";
+import { UserPlus, MoreHorizontal, KeyRound, Trash2, Shield, Plus, X, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useMachineTypes } from "@/hooks/use-machine-types";
+import { addMachineType, deleteMachineType } from "@/actions/machine-type-actions";
 import type { Profile, UserRole } from "@/types/database";
 
 const MAIN_ADMIN_EMAIL = "cg.ne.printer@gmail.com";
@@ -68,6 +70,7 @@ export function SettingsClient({ profiles }: SettingsClientProps) {
   return (
     <div className="space-y-6">
       <UserManagement profiles={profiles} />
+      <MachineTypesManager />
     </div>
   );
 }
@@ -361,6 +364,142 @@ function UserManagement({ profiles }: { profiles: Profile[] }) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deleting ? "Deleting..." : "Delete User"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function MachineTypesManager() {
+  const { data: types = [], isLoading } = useMachineTypes();
+  const [newType, setNewType] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [typeSearch, setTypeSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const queryClient = useQueryClient();
+
+  const filtered = types.filter((t) =>
+    t.toLowerCase().includes(typeSearch.toLowerCase())
+  );
+
+  async function handleAdd() {
+    if (!newType.trim()) return;
+    setAdding(true);
+    const result = await addMachineType(newType);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success(`Added "${newType.trim()}"`);
+      setNewType("");
+      queryClient.invalidateQueries({ queryKey: ["machine-types"] });
+    }
+    setAdding(false);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const result = await deleteMachineType(deleteTarget);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success(`Deleted "${deleteTarget}"`);
+      queryClient.invalidateQueries({ queryKey: ["machine-types"] });
+    }
+    setDeleting(false);
+    setDeleteTarget(null);
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Machine Types</CardTitle>
+          <CardDescription>
+            Manage the list of machine types available in the dropdown when creating or editing machines.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="New machine type name..."
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            />
+            <Button onClick={handleAdd} disabled={!newType.trim() || adding}>
+              <Plus className="mr-2 h-4 w-4" />
+              {adding ? "Adding..." : "Add"}
+            </Button>
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search types..."
+              value={typeSearch}
+              onChange={(e) => setTypeSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto border rounded-md">
+              {filtered.map((t) => (
+                <div
+                  key={t}
+                  className="flex items-center justify-between px-3 py-2 border-b last:border-0 hover:bg-muted/50"
+                >
+                  <span className="text-sm">{t}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleteTarget(t)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+              {filtered.length === 0 && (
+                <p className="p-4 text-sm text-muted-foreground text-center">
+                  No machine types found
+                </p>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            {types.length} types total. Types in use by machines cannot be deleted.
+          </p>
+        </CardContent>
+      </Card>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Machine Type</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete &quot;{deleteTarget}&quot;? This will only succeed if no
+              machines currently use this type.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
