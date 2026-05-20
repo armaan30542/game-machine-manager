@@ -77,28 +77,31 @@ function parseLoginForm(html: string) {
  * Parse the date-range form on kpbd.php ("Period by Date").
  *
  * The exact field names are not known ahead of time, so this classifies
- * inputs heuristically: hidden inputs are carried through verbatim, the
- * submit button is captured, and text/date inputs are matched to start/end
- * by their name/id (or, failing that, by document order when there are
- * exactly two).
+ * controls heuristically:
+ *   - hidden inputs, checkboxes/radios and <select> menus are carried
+ *     through verbatim at their current values, so whatever the form
+ *     needs is submitted regardless of its exact shape;
+ *   - the submit button is captured;
+ *   - text/date inputs are matched to start/end by their name/id (or,
+ *     failing that, by document order when there are exactly two).
  */
 function parseDateRangeForm(html: string): {
   startField: string;
   endField: string;
-  hiddenFields: [string, string][];
+  passthroughFields: [string, string][];
   submitName: string;
   submitValue: string;
 } | null {
   const formMatch = html.match(/<form[\s\S]*?<\/form>/i);
   const form = formMatch ? formMatch[0] : html;
-  const inputs = [...form.matchAll(/<input[^>]*>/gi)].map((m) => m[0]);
 
-  const hiddenFields: [string, string][] = [];
+  const passthroughFields: [string, string][] = [];
   const dateCandidates: { name: string; role: "start" | "end" | "?" }[] = [];
   let submitName = "";
   let submitValue = "";
 
-  for (const tag of inputs) {
+  for (const m of form.matchAll(/<input[^>]*>/gi)) {
+    const tag = m[0];
     const name = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1];
     if (!name) continue;
     const type = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
@@ -107,16 +110,34 @@ function parseDateRangeForm(html: string): {
     const hint = `${name} ${idAttr}`.toLowerCase();
 
     if (type === "hidden") {
-      hiddenFields.push([name, value]);
+      passthroughFields.push([name, value]);
+    } else if (type === "checkbox" || type === "radio") {
+      if (/\schecked/i.test(tag)) passthroughFields.push([name, value || "on"]);
     } else if (type === "submit") {
-      submitName = name;
-      submitValue = value;
-    } else if (type === "date" || type === "text") {
+      if (!submitName) {
+        submitName = name;
+        submitValue = value;
+      }
+    } else if (type === "date" || type === "text" || type === "tel") {
       let role: "start" | "end" | "?" = "?";
-      if (/start|from|begin|date1|sdate/.test(hint)) role = "start";
-      else if (/end|thru|date2|edate|\bto\b/.test(hint)) role = "end";
+      if (/start|from|begin|bdate|sdate|date1|fromdate/.test(hint)) role = "start";
+      else if (/end|thru|through|edate|tdate|date2|todate|\bto\b/.test(hint))
+        role = "end";
       dateCandidates.push({ name, role });
     }
+  }
+
+  // <select> menus (e.g. month/day/year pickers) - submit current option.
+  for (const m of form.matchAll(/<select[^>]*>[\s\S]*?<\/select>/gi)) {
+    const block = m[0];
+    const name = block.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1];
+    if (!name) continue;
+    const selected =
+      block.match(/<option[^>]*\sselected[^>]*value=['"]([^'"]*)['"]/i)?.[1] ??
+      block.match(/<option[^>]*value=['"]([^'"]*)['"][^>]*\sselected/i)?.[1] ??
+      block.match(/<option[^>]*value=['"]([^'"]*)['"]/i)?.[1] ??
+      "";
+    passthroughFields.push([name, selected]);
   }
 
   let start = dateCandidates.find((c) => c.role === "start")?.name;
@@ -127,7 +148,13 @@ function parseDateRangeForm(html: string): {
   }
   if (!start || !end) return null;
 
-  return { startField: start, endField: end, hiddenFields, submitName, submitValue };
+  return {
+    startField: start,
+    endField: end,
+    passthroughFields,
+    submitName,
+    submitValue,
+  };
 }
 
 /**
@@ -325,7 +352,9 @@ export async function fetchRevenueByDate(
     const boundary =
       "----WebKitFormBoundary" + Math.random().toString(36).slice(2, 18);
     const fields: [string, string][] = [
-      ...form.hiddenFields,
+      ...form.passthroughFields.filter(
+        ([name]) => name !== form.startField && name !== form.endField
+      ),
       [form.startField, toMdy(startDate)],
       [form.endField, toMdy(endDate)],
     ];

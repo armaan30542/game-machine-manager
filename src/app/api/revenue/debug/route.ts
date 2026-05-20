@@ -194,6 +194,32 @@ export async function GET() {
       parsed = parseRevenueResponse(periodHtml);
     }
 
+    // Step 6: GET kpbd.php (the "Period by Date" report form) and dump its
+    // structure so the date-range field names can be verified.
+    const pbdRes = await client.request({
+      path: basePath + "kpbd.php",
+      method: "GET",
+      headers: {
+        Cookie: `PHPSESSID=${sessionId}`,
+        "User-Agent": UA,
+        Referer: origin + basePath,
+      },
+    });
+    const pbdHtml = await pbdRes.body.text();
+    const pbdForm = pbdHtml.match(/<form[\s\S]*?<\/form>/i)?.[0] ?? "";
+    const pbdFields = [
+      ...pbdHtml.matchAll(/<(input|select|textarea)[^>]*>/gi),
+    ].map((m) => m[0]);
+
+    log.push({
+      step: "6_GET_kpbd",
+      status: pbdRes.statusCode,
+      isLoginPage: pbdHtml.includes("klogin.css"),
+      htmlLength: pbdHtml.length,
+      formHtml: pbdForm.substring(0, 4000),
+      fields: pbdFields.slice(0, 50),
+    });
+
     return NextResponse.json({
       location: `${location.location_number} - ${location.name}`,
       method: "undici single-connection",
