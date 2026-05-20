@@ -3,6 +3,21 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
+/**
+ * Best-effort: record a freshly-typed machine/cabinet type so it shows up as
+ * a suggestion next time. A duplicate or a missing reference table is fine -
+ * the type is stored on the machine row regardless, so errors are ignored.
+ */
+async function rememberType(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: "machine_types" | "cabinet_types",
+  name: unknown
+) {
+  if (typeof name === "string" && name.trim()) {
+    await supabase.from(table).insert({ name: name.trim() });
+  }
+}
+
 export async function createMachine(formData: {
   machine_type: string;
   cabinet_type: string;
@@ -33,6 +48,9 @@ export async function createMachine(formData: {
     },
   });
 
+  await rememberType(supabase, "machine_types", formData.machine_type);
+  await rememberType(supabase, "cabinet_types", formData.cabinet_type);
+
   revalidatePath("/inventory");
   revalidatePath("/dashboard");
   return { id: data.id };
@@ -61,6 +79,9 @@ export async function updateMachine(
     machine_id: machineId,
     details: { updated_fields: Object.keys(formData) },
   });
+
+  await rememberType(supabase, "machine_types", formData.machine_type);
+  await rememberType(supabase, "cabinet_types", formData.cabinet_type);
 
   revalidatePath("/inventory");
   revalidatePath("/machines");

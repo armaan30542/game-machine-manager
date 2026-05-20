@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Client } from "undici";
 import { parseRevenueResponse } from "@/lib/revenue-parser";
+import { fetchRevenueByDate } from "@/lib/revenue-fetch";
 
 export const maxDuration = 30;
 
@@ -220,11 +221,43 @@ export async function GET() {
       fields: pbdFields.slice(0, 50),
     });
 
+    // Step 7: run a real date-range fetch (first of this month -> yesterday)
+    // and dump the result so the per-machine breakdown can be verified.
+    let byDateParsed = null;
+    try {
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const iso = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const startIso = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+      const endIso = iso(yesterday);
+
+      const byDateHtml = await fetchRevenueByDate(
+        location.revenue_url,
+        startIso,
+        endIso
+      );
+      byDateParsed = parseRevenueResponse(byDateHtml);
+      log.push({
+        step: "7_by_date",
+        range: `${startIso} -> ${endIso}`,
+        htmlLength: byDateHtml.length,
+        isLoginPage: byDateHtml.includes("klogin.css"),
+        machineLineCount: byDateParsed.machine_lines.length,
+        machineLines: byDateParsed.machine_lines.slice(0, 5),
+        resultHtml: byDateHtml.substring(0, 8000),
+      });
+    } catch (e) {
+      log.push({ step: "7_by_date", error: String(e) });
+    }
+
     return NextResponse.json({
       location: `${location.location_number} - ${location.name}`,
       method: "undici single-connection",
       success: !isLogin && hasTotals,
       parsed,
+      byDateParsed,
       log,
     });
   } catch (err) {

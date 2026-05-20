@@ -1,8 +1,9 @@
 /**
  * Zero-revenue machine detection.
  *
- * A machine line counts as "zero revenue" when it earned nothing (or less
- * than nothing) in the latest fetched revenue period.
+ * A machine line counts as "zero revenue" only when its net revenue is
+ * exactly $0 in the latest fetched revenue period - negative figures (a
+ * machine that paid out more than it took in) are not included.
  */
 
 /** Whole days between a YYYY-MM-DD date and today. */
@@ -13,5 +14,5 @@ export function daysSince(dateStr: string): number {
 }
 
 export function isLineIdle(line: { net_revenue: number | string }): boolean {
-  return Number(line.net_revenue) <= 0;
+  return Number(line.net_revenue) === 0;
 }

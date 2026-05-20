@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CalendarRange } from "lucide-react";
@@ -31,6 +31,26 @@ interface ByDateResult {
   company_revenue: number;
 }
 
+/** YYYY-MM-DD for a Date, using local calendar parts. */
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Default range: the first of the current month through yesterday. */
+function defaultRange(): { start: string; end: string } {
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  let start = isoDate(firstOfMonth);
+  const end = isoDate(yesterday);
+  if (start > end) start = end;
+  return { start, end };
+}
+
 export function RevenueByDateClient({
   locations,
   isAdmin,
@@ -38,8 +58,8 @@ export function RevenueByDateClient({
   locations: LocationOption[];
   isAdmin: boolean;
 }) {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(() => defaultRange().start);
+  const [endDate, setEndDate] = useState(() => defaultRange().end);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [results, setResults] = useState<Record<string, ByDateResult>>({});
@@ -111,6 +131,17 @@ export function RevenueByDateClient({
     }
   }
 
+  // Run the default report (month-to-date) automatically on first load so
+  // the page already shows data without the user clicking Run.
+  const didAutoRun = useRef(false);
+  useEffect(() => {
+    if (didAutoRun.current) return;
+    if (!isAdmin || locations.length === 0) return;
+    didAutoRun.current = true;
+    void handleRun();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, locations]);
+
   const rows: RevenueRowData[] = locations
     .filter((l) => results[l.id])
     .map((l) => {
@@ -157,9 +188,7 @@ export function RevenueByDateClient({
         <CalendarRange
           className={`mr-2 h-4 w-4 ${running ? "animate-pulse" : ""}`}
         />
-        {running
-          ? `Running ${progress.done}/${progress.total}`
-          : "Run Report"}
+        {running ? `Running ${progress.done}/${progress.total}` : "Run Report"}
       </Button>
     </div>
   );
@@ -179,6 +208,7 @@ export function RevenueByDateClient({
     <RevenueTable
       rows={rows}
       controls={controls}
+      controlsPosition="left"
       renderExpanded={(row) => (
         <MachineLinesTable lines={results[row.id]?.machine_lines ?? []} />
       )}

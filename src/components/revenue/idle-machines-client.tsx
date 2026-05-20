@@ -21,6 +21,10 @@ function fmt(n: number): string {
   }).format(n);
 }
 
+function ownerPhone(line: IdleLine): string {
+  return line.locations?.contact_phone || line.locations?.phone || "—";
+}
+
 function staleLabel(line: IdleLine): string {
   if (!line.last_read_date) return "Never read";
   const d = daysSince(line.last_read_date);
@@ -49,6 +53,7 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
             <TableHead>Location</TableHead>
             <TableHead>Pos</TableHead>
             <TableHead>Game</TableHead>
+            <TableHead>Owner Phone</TableHead>
             <TableHead>Last Read</TableHead>
             <TableHead className="text-right">Net Revenue</TableHead>
           </TableRow>
@@ -77,18 +82,17 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
                   </TableCell>
                   <TableCell>{l.position ?? "-"}</TableCell>
                   <TableCell>{l.game_name}</TableCell>
+                  <TableCell className="text-sm">{ownerPhone(l)}</TableCell>
                   <TableCell className="text-sm">
                     {l.last_read_date ?? "Never"}
                   </TableCell>
-                  <TableCell
-                    className={`text-right font-medium ${net < 0 ? "text-red-600" : "text-orange-600"}`}
-                  >
+                  <TableCell className="text-right font-medium text-orange-600">
                     {fmt(net)}
                   </TableCell>
                 </TableRow>
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={5} className="bg-muted/30">
+                    <TableCell colSpan={6} className="bg-muted/30">
                       <IdleBreakdown line={l} />
                     </TableCell>
                   </TableRow>
@@ -114,6 +118,11 @@ function IdleBreakdown({ line }: { line: IdleLine }) {
             : "-"
         }
       />
+      <Field
+        label="Owner / Contact"
+        value={line.locations?.contact_name || "—"}
+      />
+      <Field label="Owner Phone" value={ownerPhone(line)} />
       <Field
         label="Position"
         value={line.position != null ? String(line.position) : "-"}
