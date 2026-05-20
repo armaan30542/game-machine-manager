@@ -10,6 +10,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarFooter,
@@ -19,21 +20,31 @@ import {
   MapPin,
   Package,
   DollarSign,
+  CalendarRange,
+  AlertTriangle,
   History,
   Settings,
   Gamepad2,
   LogOut,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useProfile } from "@/hooks/use-profile";
+import { useIdleMachines } from "@/hooks/use-idle-machines";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 
-const navItems = [
+const navItems: {
+  title: string;
+  href: string;
+  icon: LucideIcon;
+  exact?: boolean;
+}[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { title: "Locations", href: "/locations", icon: MapPin },
   { title: "Inventory", href: "/inventory", icon: Package },
-  { title: "Revenue", href: "/revenue", icon: DollarSign },
+  { title: "Revenue", href: "/revenue", icon: DollarSign, exact: true },
+  { title: "Revenue by Date", href: "/revenue/by-date", icon: CalendarRange },
   { title: "Activity", href: "/activity", icon: History },
 ];
 
@@ -44,8 +55,10 @@ const adminItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const { profile } = useProfile();
+  const { data: idle } = useIdleMachines();
   const router = useRouter();
   const supabase = createClient();
+  const idleCount = idle?.count ?? 0;
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -70,7 +83,11 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.href}>
                   <Link href={item.href} className="w-full">
                     <SidebarMenuButton
-                      isActive={pathname.startsWith(item.href)}
+                      isActive={
+                        item.exact
+                          ? pathname === item.href
+                          : pathname.startsWith(item.href)
+                      }
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
@@ -78,6 +95,19 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuItem>
               ))}
+              {idleCount > 0 && (
+                <SidebarMenuItem>
+                  <Link href="/revenue/idle" className="w-full">
+                    <SidebarMenuButton
+                      isActive={pathname.startsWith("/revenue/idle")}
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>Idle Machines</span>
+                    </SidebarMenuButton>
+                  </Link>
+                  <SidebarMenuBadge>{idleCount}</SidebarMenuBadge>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

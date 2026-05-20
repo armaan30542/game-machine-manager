@@ -1,9 +1,20 @@
+export interface MachineLine {
+  position: number | null;
+  ksys_game_id: string | null;
+  game_name: string;
+  cash_in: number;
+  cash_out: number;
+  net_revenue: number;
+  last_read_date: string | null;
+}
+
 export interface RevenueData {
   cash_in: number;
   cash_out: number;
   net_revenue: number;
   period_start: string;
   period_end: string;
+  machine_lines: MachineLine[];
 }
 
 /**
@@ -47,7 +58,79 @@ function parseJsonRevenue(json: Record<string, unknown>): RevenueData {
     (json.endDate as string) ??
     now.toISOString().split("T")[0];
 
-  return { cash_in: cashIn, cash_out: cashOut, net_revenue: netRevenue, period_start: periodStart, period_end: periodEnd };
+  return {
+    cash_in: cashIn,
+    cash_out: cashOut,
+    net_revenue: netRevenue,
+    period_start: periodStart,
+    period_end: periodEnd,
+    machine_lines: [],
+  };
+}
+
+/** Parse a dollar amount out of a (tag-stripped) table cell. */
+function parseMoney(text: string): number {
+  const m = text.match(/-?[\d,]+\.?\d*/);
+  return m ? Number(m[0].replace(/,/g, "")) : 0;
+}
+
+/**
+ * Extract per-game rows from the ksys22 table.
+ *
+ * Each game row is a <tr> whose position cell carries a title attribute like:
+ *   title='ID K7904381 &#013;&#010;FUSION 5 LIGHTNING'
+ * Columns after the position cell are:
+ *   Start Date | Last Read Date | Start M In | Start M Out | End M In |
+ *   End M Out | Period In | Period Out | Period Net | Hold
+ * The Totals row uses <th> cells and has no title attribute, so it is skipped.
+ */
+function parseMachineLines(html: string): MachineLine[] {
+  const lines: MachineLine[] = [];
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
+
+  for (const row of rows) {
+    const titleMatch = row.match(/title=(['"])(.*?)\1/i);
+    if (!titleMatch || !/ID\s/i.test(titleMatch[2])) continue;
+
+    const title = titleMatch[2];
+    const idMatch = title.match(/ID\s+(\S+)/i);
+    const gameName = title
+      .replace(/ID\s+\S+/i, "")
+      .replace(/&#0*1[03];/g, " ")
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const cells = row.match(/<td[\s\S]*?<\/td>/gi);
+    if (!cells) continue;
+
+    const posIdx = cells.findIndex(
+      (c) => /title=/i.test(c) && /ID\s/i.test(c)
+    );
+    if (posIdx === -1) continue;
+
+    const cellText = (i: number): string =>
+      i >= 0 && i < cells.length
+        ? stripHtmlTags(cells[i]).replace(/&nbsp;?/gi, " ").trim()
+        : "";
+
+    const position = parseInt(cellText(posIdx).replace(/\D/g, ""), 10);
+    const lastReadRaw = parseDate(cellText(posIdx + 2));
+    const lastReadDate =
+      lastReadRaw && lastReadRaw >= "2010-01-01" ? lastReadRaw : null;
+
+    lines.push({
+      position: Number.isFinite(position) ? position : null,
+      ksys_game_id: idMatch ? idMatch[1] : null,
+      game_name: gameName || "Unknown",
+      cash_in: parseMoney(cellText(posIdx + 7)),
+      cash_out: parseMoney(cellText(posIdx + 8)),
+      net_revenue: parseMoney(cellText(posIdx + 9)),
+      last_read_date: lastReadDate,
+    });
+  }
+
+  return lines;
 }
 
 function parseDate(str: string): string | null {
@@ -129,5 +212,6 @@ function parseKsys22Html(html: string): RevenueData {
     net_revenue: netRevenue,
     period_start: periodStart,
     period_end: periodEnd,
+    machine_lines: parseMachineLines(html),
   };
 }
