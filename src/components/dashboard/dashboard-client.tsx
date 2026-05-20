@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -7,10 +8,26 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, Package, Warehouse, Zap } from "lucide-react";
-import { useDashboardData } from "@/hooks/use-dashboard";
+import {
+  MapPin,
+  Package,
+  Warehouse,
+  Zap,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+} from "lucide-react";
+import { useDashboardData, type DeployedMachineRow } from "@/hooks/use-dashboard";
 
 function formatAction(action: string): string {
   const map: Record<string, string> = {
@@ -210,6 +227,126 @@ export function DashboardClient() {
           </CardContent>
         </Card>
       </div>
+
+      <DeployedMachinesTable machines={data.deployedMachineList} />
     </div>
+  );
+}
+
+type DepSortKey = "location" | "machine_type" | "cabinet_type" | "position";
+
+function DeployedMachinesTable({
+  machines,
+}: {
+  machines: DeployedMachineRow[];
+}) {
+  const [sortKey, setSortKey] = useState<DepSortKey>("location");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function sortValue(m: DeployedMachineRow, key: DepSortKey): string | number {
+    switch (key) {
+      case "location":
+        return m.locations?.location_number ?? "";
+      case "machine_type":
+        return m.machine_type;
+      case "cabinet_type":
+        return m.cabinet_type;
+      case "position":
+        return m.position_at_location ?? 0;
+    }
+  }
+
+  const sorted = [...machines].sort((a, b) => {
+    const av = sortValue(a, sortKey);
+    const bv = sortValue(b, sortKey);
+    const cmp =
+      typeof av === "number" && typeof bv === "number"
+        ? av - bv
+        : String(av).localeCompare(String(bv));
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  function handleSort(key: DepSortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function SortIcon({ col }: { col: DepSortKey }) {
+    if (sortKey !== col)
+      return <ArrowUpDown className="ml-1 h-3 w-3 opacity-40" />;
+    return sortDir === "asc" ? (
+      <ArrowUp className="ml-1 h-3 w-3" />
+    ) : (
+      <ArrowDown className="ml-1 h-3 w-3" />
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Deployed Machines ({machines.length})</CardTitle>
+        <CardDescription>
+          All machines currently placed at a location
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="max-h-[480px] overflow-y-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {(
+                  [
+                    ["location", "Location"],
+                    ["machine_type", "Machine Type"],
+                    ["cabinet_type", "Cabinet"],
+                    ["position", "Position"],
+                  ] as [DepSortKey, string][]
+                ).map(([key, label]) => (
+                  <TableHead
+                    key={key}
+                    className="cursor-pointer select-none hover:bg-muted/50"
+                    onClick={() => handleSort(key)}
+                  >
+                    <span className="inline-flex items-center">
+                      {label}
+                      <SortIcon col={key} />
+                    </span>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sorted.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={4}
+                    className="text-center py-8 text-muted-foreground"
+                  >
+                    No deployed machines
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sorted.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="font-medium">
+                      {m.locations
+                        ? `${m.locations.location_number} - ${m.locations.name}`
+                        : "-"}
+                    </TableCell>
+                    <TableCell>{m.machine_type}</TableCell>
+                    <TableCell>{m.cabinet_type}</TableCell>
+                    <TableCell>{m.position_at_location ?? "-"}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
