@@ -21,9 +21,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createMachine, updateMachine } from "@/actions/machine-actions";
+import { addMachineType } from "@/actions/machine-type-actions";
+import { addCabinetType } from "@/actions/cabinet-type-actions";
 import { toast } from "sonner";
-import { CABINET_TYPES } from "@/lib/constants";
 import { useMachineTypes } from "@/hooks/use-machine-types";
+import { useCabinetTypes } from "@/hooks/use-cabinet-types";
 import type { Machine } from "@/types/database";
 import { MachinePhoto } from "@/components/machines/machine-photo";
 
@@ -38,6 +40,7 @@ export function MachineForm({ machine }: MachineFormProps) {
   const [loading, setLoading] = useState(false);
   const [machineSearch, setMachineSearch] = useState("");
   const { data: machineTypes = [] } = useMachineTypes();
+  const { data: cabinetTypes = [] } = useCabinetTypes();
 
   const [form, setForm] = useState({
     machine_type: machine?.machine_type ?? "",
@@ -122,6 +125,12 @@ export function MachineForm({ machine }: MachineFormProps) {
                 ))}
               </SelectContent>
             </Select>
+            <AddTypeRow
+              label="Machine Type"
+              queryKey="machine-types"
+              action={addMachineType}
+              onAdded={(n) => updateField("machine_type", n)}
+            />
           </div>
 
           <div className="space-y-2">
@@ -134,13 +143,19 @@ export function MachineForm({ machine }: MachineFormProps) {
                 <SelectValue placeholder="Select cabinet type" />
               </SelectTrigger>
               <SelectContent>
-                {CABINET_TYPES.map((ct) => (
+                {cabinetTypes.map((ct) => (
                   <SelectItem key={ct} value={ct}>
                     {ct}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <AddTypeRow
+              label="Cabinet Type"
+              queryKey="cabinet-types"
+              action={addCabinetType}
+              onAdded={(n) => updateField("cabinet_type", n)}
+            />
           </div>
 
           <div className="space-y-2">
@@ -202,5 +217,87 @@ export function MachineForm({ machine }: MachineFormProps) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Inline "add a new type" control shown beneath a type dropdown so an admin
+ * can create a machine/cabinet type that isn't in the list yet.
+ */
+function AddTypeRow({
+  label,
+  queryKey,
+  action,
+  onAdded,
+}: {
+  label: string;
+  queryKey: string;
+  action: (name: string) => Promise<{ error?: string }>;
+  onAdded: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+
+  async function submit() {
+    const name = value.trim();
+    if (!name) return;
+    setBusy(true);
+    const result = await action(name);
+    setBusy(false);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: [queryKey] });
+    onAdded(name);
+    toast.success(`${label} "${name}" added`);
+    setValue("");
+    setOpen(false);
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs text-primary hover:underline"
+      >
+        + Add new {label.toLowerCase()}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <Input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={`New ${label.toLowerCase()} name`}
+        className="h-8"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <Button type="button" size="sm" onClick={submit} disabled={busy}>
+        Add
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          setOpen(false);
+          setValue("");
+        }}
+      >
+        Cancel
+      </Button>
+    </div>
   );
 }
