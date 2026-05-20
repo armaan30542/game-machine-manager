@@ -18,7 +18,7 @@ export function useIdleMachines() {
       const { data } = await supabase
         .from("revenue_machine_lines")
         .select("*, locations:location_id(location_number, name)")
-        .order("last_read_date", { ascending: true, nullsFirst: true });
+        .order("net_revenue", { ascending: true });
 
       const lines = (data ?? []) as IdleLine[];
       const flagged = lines.filter((l) => isLineIdle(l));

@@ -75,64 +75,59 @@ function parseMoney(text: string): number {
 }
 
 /**
- * Extract per-game rows from the ksys22 table.
- *
- * Each game row is a <tr> whose first ("Game") cell carries a title
- * attribute like:  title='ID K7904381 &#013;&#010;FUSION 5 LIGHTNING'
- * The visible text of that cell is the label ksys22 shows on screen
- * ("Game 1", "Game 2", ...) and that label is what we display.
- * Columns after the Game cell are:
- *   Start Date | Last Read Date | Start M In | Start M Out | End M In |
+ * Extract per-game rows from a ksys22 revenue table (kperiod.php and the
+ * kpbd.php date-range report share the same 11-column layout):
+ *   Game | Start Date | Last Read Date | Start M In | Start M Out | End M In |
  *   End M Out | Period In | Period Out | Period Net | Hold
- * The Totals row uses <th> cells and has no title attribute, so it is skipped.
+ *
+ * The "Game" cell shows the on-screen label ("1", "2", ... -> "Game 1") and
+ * may carry a tooltip (title='ID K7904381 ...'). Detection is structural so
+ * it still works when the tooltip is absent; header and Totals rows are
+ * rejected because they have no numeric game column or no period figures.
  */
 function parseMachineLines(html: string): MachineLine[] {
   const lines: MachineLine[] = [];
   const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
 
   for (const row of rows) {
-    const titleMatch = row.match(/title=(['"])(.*?)\1/i);
-    if (!titleMatch || !/ID\s/i.test(titleMatch[2])) continue;
-
-    const idMatch = titleMatch[2].match(/ID\s+(\S+)/i);
-
     const cells = row.match(/<td[\s\S]*?<\/td>/gi);
-    if (!cells) continue;
-
-    const posIdx = cells.findIndex(
-      (c) => /title=/i.test(c) && /ID\s/i.test(c)
-    );
-    if (posIdx === -1) continue;
+    if (!cells || cells.length < 10) continue;
 
     const cellText = (i: number): string =>
       i >= 0 && i < cells.length
         ? stripHtmlTags(cells[i]).replace(/&nbsp;?/gi, " ").trim()
         : "";
 
+    // The Game cell carries a ksys tooltip; without one, it is column 0.
+    let posIdx = cells.findIndex(
+      (c) => /title=/i.test(c) && /ID\s/i.test(c)
+    );
+    if (posIdx === -1) posIdx = 0;
+
     const gameLabel = cellText(posIdx).replace(/\s+/g, " ").trim();
     const position = parseInt(gameLabel.replace(/\D/g, ""), 10);
+    if (!Number.isFinite(position) || position <= 0 || position > 200) {
+      continue;
+    }
+
+    const inText = cellText(posIdx + 7);
+    const netText = cellText(posIdx + 9);
+    if (!/\d/.test(inText) && !/\d/.test(netText)) continue;
+
+    const titleMatch = row.match(/title=(['"])(.*?)\1/i);
+    const idMatch = titleMatch?.[2].match(/ID\s+(\S+)/i);
+
     const lastReadRaw = parseDate(cellText(posIdx + 2));
     const lastReadDate =
       lastReadRaw && lastReadRaw >= "2010-01-01" ? lastReadRaw : null;
 
-    // ksys22 labels each row "Game 1", "Game 2", ... in the first column.
-    // Show that label rather than the product name from the tooltip.
-    let gameName: string;
-    if (/game/i.test(gameLabel)) {
-      gameName = gameLabel;
-    } else if (Number.isFinite(position)) {
-      gameName = `Game ${position}`;
-    } else {
-      gameName = gameLabel || "Unknown";
-    }
-
     lines.push({
-      position: Number.isFinite(position) ? position : null,
+      position,
       ksys_game_id: idMatch ? idMatch[1] : null,
-      game_name: gameName,
-      cash_in: parseMoney(cellText(posIdx + 7)),
+      game_name: /game/i.test(gameLabel) ? gameLabel : `Game ${position}`,
+      cash_in: parseMoney(inText),
       cash_out: parseMoney(cellText(posIdx + 8)),
-      net_revenue: parseMoney(cellText(posIdx + 9)),
+      net_revenue: parseMoney(netText),
       last_read_date: lastReadDate,
     });
   }

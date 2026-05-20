@@ -24,7 +24,7 @@ function fmt(n: number): string {
 function staleLabel(line: IdleLine): string {
   if (!line.last_read_date) return "Never read";
   const d = daysSince(line.last_read_date);
-  return `${d} day${d === 1 ? "" : "s"}`;
+  return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 
 export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
@@ -34,7 +34,8 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
     return (
       <Card>
         <CardContent className="py-12 text-center text-muted-foreground">
-          No idle machines. Every machine has a recent meter read.
+          No zero-revenue machines. Every machine earned money in the latest
+          period.
         </CardContent>
       </Card>
     );
@@ -49,12 +50,13 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
             <TableHead>Pos</TableHead>
             <TableHead>Game</TableHead>
             <TableHead>Last Read</TableHead>
-            <TableHead className="text-right">Days Stale</TableHead>
+            <TableHead className="text-right">Net Revenue</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {lines.map((l) => {
             const isExpanded = expandedId === l.id;
+            const net = Number(l.net_revenue);
             return (
               <Fragment key={l.id}>
                 <TableRow
@@ -78,8 +80,10 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
                   <TableCell className="text-sm">
                     {l.last_read_date ?? "Never"}
                   </TableCell>
-                  <TableCell className="text-right font-medium text-orange-600">
-                    {staleLabel(l)}
+                  <TableCell
+                    className={`text-right font-medium ${net < 0 ? "text-red-600" : "text-orange-600"}`}
+                  >
+                    {fmt(net)}
                   </TableCell>
                 </TableRow>
                 {isExpanded && (
@@ -117,7 +121,7 @@ function IdleBreakdown({ line }: { line: IdleLine }) {
       <Field label="Game" value={line.game_name} />
       <Field label="ksys Game ID" value={line.ksys_game_id ?? "-"} />
       <Field label="Last Meter Read" value={line.last_read_date ?? "Never read"} />
-      <Field label="Days Stale" value={staleLabel(line)} />
+      <Field label="Meter Age" value={staleLabel(line)} />
       <Field label="Last Period Cash In" value={fmt(Number(line.cash_in))} />
       <Field label="Last Period Cash Out" value={fmt(Number(line.cash_out))} />
       <Field
