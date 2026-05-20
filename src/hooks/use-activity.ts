@@ -9,6 +9,10 @@ export function useActivity() {
 
   return useQuery({
     queryKey: ["activity"],
+    // Always refetch when the page opens so newly-logged actions show up
+    // even if the action that wrote them did not invalidate this query.
+    staleTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data } = await supabase
         .from("audit_log")

@@ -30,7 +30,6 @@ export function RevenuePageClient() {
       ) : (
         <RevenueClient
           revenueRecords={data?.revenueRecords ?? []}
-          locations={data?.locations ?? []}
           isAdmin={isAdmin}
         />
       )}

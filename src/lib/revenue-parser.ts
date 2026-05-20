@@ -77,9 +77,11 @@ function parseMoney(text: string): number {
 /**
  * Extract per-game rows from the ksys22 table.
  *
- * Each game row is a <tr> whose position cell carries a title attribute like:
- *   title='ID K7904381 &#013;&#010;FUSION 5 LIGHTNING'
- * Columns after the position cell are:
+ * Each game row is a <tr> whose first ("Game") cell carries a title
+ * attribute like:  title='ID K7904381 &#013;&#010;FUSION 5 LIGHTNING'
+ * The visible text of that cell is the label ksys22 shows on screen
+ * ("Game 1", "Game 2", ...) and that label is what we display.
+ * Columns after the Game cell are:
  *   Start Date | Last Read Date | Start M In | Start M Out | End M In |
  *   End M Out | Period In | Period Out | Period Net | Hold
  * The Totals row uses <th> cells and has no title attribute, so it is skipped.
@@ -92,14 +94,7 @@ function parseMachineLines(html: string): MachineLine[] {
     const titleMatch = row.match(/title=(['"])(.*?)\1/i);
     if (!titleMatch || !/ID\s/i.test(titleMatch[2])) continue;
 
-    const title = titleMatch[2];
-    const idMatch = title.match(/ID\s+(\S+)/i);
-    const gameName = title
-      .replace(/ID\s+\S+/i, "")
-      .replace(/&#0*1[03];/g, " ")
-      .replace(/[\r\n]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const idMatch = titleMatch[2].match(/ID\s+(\S+)/i);
 
     const cells = row.match(/<td[\s\S]*?<\/td>/gi);
     if (!cells) continue;
@@ -114,15 +109,27 @@ function parseMachineLines(html: string): MachineLine[] {
         ? stripHtmlTags(cells[i]).replace(/&nbsp;?/gi, " ").trim()
         : "";
 
-    const position = parseInt(cellText(posIdx).replace(/\D/g, ""), 10);
+    const gameLabel = cellText(posIdx).replace(/\s+/g, " ").trim();
+    const position = parseInt(gameLabel.replace(/\D/g, ""), 10);
     const lastReadRaw = parseDate(cellText(posIdx + 2));
     const lastReadDate =
       lastReadRaw && lastReadRaw >= "2010-01-01" ? lastReadRaw : null;
 
+    // ksys22 labels each row "Game 1", "Game 2", ... in the first column.
+    // Show that label rather than the product name from the tooltip.
+    let gameName: string;
+    if (/game/i.test(gameLabel)) {
+      gameName = gameLabel;
+    } else if (Number.isFinite(position)) {
+      gameName = `Game ${position}`;
+    } else {
+      gameName = gameLabel || "Unknown";
+    }
+
     lines.push({
       position: Number.isFinite(position) ? position : null,
       ksys_game_id: idMatch ? idMatch[1] : null,
-      game_name: gameName || "Unknown",
+      game_name: gameName,
       cash_in: parseMoney(cellText(posIdx + 7)),
       cash_out: parseMoney(cellText(posIdx + 8)),
       net_revenue: parseMoney(cellText(posIdx + 9)),

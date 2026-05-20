@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { location_id, start_date, end_date } = await request.json();
+  const { location_id, start_date, end_date, log_run } = await request.json();
 
   if (!location_id || !start_date || !end_date) {
     return NextResponse.json(
@@ -66,20 +66,23 @@ export async function POST(request: NextRequest) {
     const companyRevenue =
       (parsed.net_revenue - feeAmount) * (sharePercent / 100);
 
-    // Display-only feature: log the run, but do not persist revenue rows.
-    await supabase.from("audit_log").insert({
-      action: "revenue_by_date_run",
-      performed_by: user.id,
-      location_id,
-      details: { start_date, end_date, net_revenue: parsed.net_revenue },
-    });
+    // Display-only feature: it does not persist revenue rows. The client
+    // sets log_run on exactly one location per run so the activity log
+    // gets a single "Revenue by Date" entry instead of one per location.
+    if (log_run) {
+      await supabase.from("audit_log").insert({
+        action: "revenue_by_date_run",
+        performed_by: user.id,
+        details: { start_date, end_date },
+      });
+    }
 
     return NextResponse.json({
       cash_in: parsed.cash_in,
       cash_out: parsed.cash_out,
       net_revenue: parsed.net_revenue,
-      period_start: parsed.period_start,
-      period_end: parsed.period_end,
+      period_start: start_date,
+      period_end: end_date,
       machine_lines: parsed.machine_lines,
       fee_amount: feeAmount,
       company_share_pct: sharePercent,

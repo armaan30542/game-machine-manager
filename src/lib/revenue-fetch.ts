@@ -73,61 +73,141 @@ function parseLoginForm(html: string) {
   return { usernameField, passwordField, submitName, submitValue };
 }
 
+/** Read an attribute value from a single HTML tag string. */
+function tagAttr(tag: string, name: string): string | undefined {
+  const m = tag.match(
+    new RegExp(
+      `[\\s'"]${name}\\s*=\\s*('([^']*)'|"([^"]*)"|([^\\s'">]+))`,
+      "i"
+    )
+  );
+  if (!m) return undefined;
+  return m[2] ?? m[3] ?? m[4] ?? "";
+}
+
+/** Rank an AM/PM time label on a 0-23 scale (00AM=0, 12PM=12, 11PM=23). */
+function timeRank(label: string): number | null {
+  const m = label.match(/(\d{1,2})\s*(AM|PM)/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10) % 12;
+  if (/PM/i.test(m[2])) h += 12;
+  return h;
+}
+
 /**
- * Parse the date-range form on kpbd.php ("Period by Date").
+ * Parse the date-range form on kpbd.php ("Period on ... Games").
  *
- * The exact field names are not known ahead of time, so this classifies
- * inputs heuristically: hidden inputs are carried through verbatim, the
- * submit button is captured, and text/date inputs are matched to start/end
- * by their name/id (or, failing that, by document order when there are
- * exactly two).
+ * The form has two date text inputs (From / To), two AM-PM time dropdowns
+ * and a Search button. This reads it generically:
+ *   - the two text inputs, in document order, are the start and end dates;
+ *   - AM/PM <select> menus become the start time (earliest option) and end
+ *     time (latest option) so a range covers whole days;
+ *   - other selects keep their current value, hidden inputs pass through,
+ *     and only the search-style submit button is included (not "Close").
  */
 function parseDateRangeForm(html: string): {
+  fixedFields: [string, string][];
   startField: string;
   endField: string;
-  hiddenFields: [string, string][];
-  submitName: string;
-  submitValue: string;
 } | null {
   const formMatch = html.match(/<form[\s\S]*?<\/form>/i);
   const form = formMatch ? formMatch[0] : html;
-  const inputs = [...form.matchAll(/<input[^>]*>/gi)].map((m) => m[0]);
 
-  const hiddenFields: [string, string][] = [];
-  const dateCandidates: { name: string; role: "start" | "end" | "?" }[] = [];
-  let submitName = "";
-  let submitValue = "";
+  const fixedFields: [string, string][] = [];
+  const textInputs: { name: string; idx: number }[] = [];
+  const selects: {
+    name: string;
+    idx: number;
+    options: { value: string; label: string; selected: boolean }[];
+  }[] = [];
+  const submits: { name: string; value: string; idx: number }[] = [];
 
-  for (const tag of inputs) {
-    const name = tag.match(/name=['"]?([^'">\s]+)['"]?/i)?.[1];
+  for (const m of form.matchAll(/<input\b[^>]*>/gi)) {
+    const tag = m[0];
+    const name = tagAttr(tag, "name");
     if (!name) continue;
-    const type = (tag.match(/type=['"]?(\w+)['"]?/i)?.[1] || "text").toLowerCase();
-    const value = tag.match(/value=['"]([^'"]*)['"]/i)?.[1] ?? "";
-    const idAttr = tag.match(/id=['"]?([^'">\s]+)['"]?/i)?.[1] || "";
-    const hint = `${name} ${idAttr}`.toLowerCase();
-
+    const type = (tagAttr(tag, "type") || "text").toLowerCase();
+    const value = tagAttr(tag, "value") ?? "";
     if (type === "hidden") {
-      hiddenFields.push([name, value]);
-    } else if (type === "submit") {
-      submitName = name;
-      submitValue = value;
-    } else if (type === "date" || type === "text") {
-      let role: "start" | "end" | "?" = "?";
-      if (/start|from|begin|date1|sdate/.test(hint)) role = "start";
-      else if (/end|thru|date2|edate|\bto\b/.test(hint)) role = "end";
-      dateCandidates.push({ name, role });
+      fixedFields.push([name, value]);
+    } else if (type === "submit" || type === "image") {
+      submits.push({ name, value, idx: m.index ?? 0 });
+    } else if (type === "checkbox" || type === "radio") {
+      if (/[\s'"]checked/i.test(tag)) fixedFields.push([name, value || "on"]);
+    } else if (type === "text" || type === "date") {
+      textInputs.push({ name, idx: m.index ?? 0 });
     }
   }
 
-  let start = dateCandidates.find((c) => c.role === "start")?.name;
-  let end = dateCandidates.find((c) => c.role === "end")?.name;
-  if ((!start || !end) && dateCandidates.length === 2) {
-    start = start ?? dateCandidates[0].name;
-    end = end ?? dateCandidates[1].name;
+  for (const m of form.matchAll(/<select\b[^>]*>[\s\S]*?<\/select>/gi)) {
+    const block = m[0];
+    const name = tagAttr(block, "name");
+    if (!name) continue;
+    const options: { value: string; label: string; selected: boolean }[] = [];
+    for (const o of block.matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)) {
+      const optTag = `<option ${o[1]} >`;
+      const label = o[2]
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;?/gi, " ")
+        .trim();
+      options.push({
+        value: tagAttr(optTag, "value") ?? label,
+        label,
+        selected: /[\s'"]selected/i.test(o[1]),
+      });
+    }
+    selects.push({ name, idx: m.index ?? 0, options });
   }
-  if (!start || !end) return null;
 
-  return { startField: start, endField: end, hiddenFields, submitName, submitValue };
+  for (const m of form.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
+    const btnTag = `<button ${m[1]} >`;
+    const name = tagAttr(btnTag, "name");
+    if (!name) continue;
+    const type = (tagAttr(btnTag, "type") || "submit").toLowerCase();
+    if (type === "submit") {
+      submits.push({
+        name,
+        value: tagAttr(btnTag, "value") ?? m[2].replace(/<[^>]*>/g, "").trim(),
+        idx: m.index ?? 0,
+      });
+    }
+  }
+
+  if (textInputs.length < 2) return null;
+  textInputs.sort((a, b) => a.idx - b.idx);
+  const startField = textInputs[0].name;
+  const endField = textInputs[1].name;
+
+  selects.sort((a, b) => a.idx - b.idx);
+  const timeSelects = selects.filter((s) =>
+    s.options.some((o) => timeRank(o.label) !== null)
+  );
+  for (const s of selects) {
+    let chosen: string | undefined;
+    if (timeSelects.length === 2 && s === timeSelects[0]) {
+      chosen = [...s.options]
+        .filter((o) => timeRank(o.label) !== null)
+        .sort((a, b) => timeRank(a.label)! - timeRank(b.label)!)[0]?.value;
+    } else if (timeSelects.length === 2 && s === timeSelects[1]) {
+      chosen = [...s.options]
+        .filter((o) => timeRank(o.label) !== null)
+        .sort((a, b) => timeRank(b.label)! - timeRank(a.label)!)[0]?.value;
+    }
+    if (chosen === undefined) {
+      chosen = (s.options.find((o) => o.selected) ?? s.options[0])?.value;
+    }
+    fixedFields.push([s.name, chosen ?? ""]);
+  }
+
+  if (submits.length > 0) {
+    const preferred =
+      submits.find((s) =>
+        /search|run|go|find|view|submit|period|ok/i.test(`${s.name} ${s.value}`)
+      ) ?? [...submits].sort((a, b) => a.idx - b.idx)[0];
+    fixedFields.push([preferred.name, preferred.value]);
+  }
+
+  return { fixedFields, startField, endField };
 }
 
 /**
@@ -293,9 +373,10 @@ export async function fetchRevenueByDate(
   const { origin, basePath } = resolveBase(revenueUrl);
   const client = new Client(origin, { keepAliveTimeout: 30000 });
 
+  // ksys22 displays and expects dates as MM/DD/YY (2-digit year).
   const toMdy = (iso: string): string => {
     const [y, m, d] = iso.split("-");
-    return `${m}/${d}/${y}`;
+    return `${m}/${d}/${y.slice(-2)}`;
   };
 
   try {
@@ -325,11 +406,12 @@ export async function fetchRevenueByDate(
     const boundary =
       "----WebKitFormBoundary" + Math.random().toString(36).slice(2, 18);
     const fields: [string, string][] = [
-      ...form.hiddenFields,
+      ...form.fixedFields.filter(
+        ([name]) => name !== form.startField && name !== form.endField
+      ),
       [form.startField, toMdy(startDate)],
       [form.endField, toMdy(endDate)],
     ];
-    if (form.submitName) fields.push([form.submitName, form.submitValue]);
     const body = buildMultipart(fields, boundary);
 
     let res = await client.request({
