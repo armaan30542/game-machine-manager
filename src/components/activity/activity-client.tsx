@@ -27,6 +27,7 @@ import {
   XCircle,
   Edit,
   DollarSign,
+  CalendarRange,
   Package,
 } from "lucide-react";
 import type { AuditLogEntry } from "@/types/database";
@@ -100,6 +101,11 @@ const ACTION_META: Record<
     color: "bg-purple-100 text-purple-800",
     icon: DollarSign,
   },
+  revenue_by_date_run: {
+    label: "Revenue by Date",
+    color: "bg-purple-100 text-purple-800",
+    icon: CalendarRange,
+  },
 };
 
 interface ActivityClientProps {
@@ -124,7 +130,7 @@ const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
       "location_reopened",
     ],
   },
-  { label: "Revenue", actions: ["revenue_fetched"] },
+  { label: "Revenue", actions: ["revenue_fetched", "revenue_by_date_run"] },
 ];
 
 export function ActivityClient({ auditLog }: ActivityClientProps) {

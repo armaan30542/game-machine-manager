@@ -59,12 +59,16 @@ export function RevenueByDateClient({
 
     let done = 0;
     let errorCount = 0;
+    let logClaimed = false;
     const queue = [...locations];
 
     async function worker() {
       for (;;) {
         const loc = queue.shift();
         if (!loc) return;
+        // Exactly one request per run logs a single activity entry.
+        const claimLog = !logClaimed;
+        logClaimed = true;
         try {
           const res = await fetch("/api/revenue/by-date", {
             method: "POST",
@@ -73,6 +77,7 @@ export function RevenueByDateClient({
               location_id: loc.id,
               start_date: startDate,
               end_date: endDate,
+              log_run: claimLog,
             }),
           });
           const data = await res.json();

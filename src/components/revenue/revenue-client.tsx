@@ -52,14 +52,17 @@ export function RevenueClient({ revenueRecords, isAdmin }: RevenueClientProps) {
             `Data returned 0. First location: ${firstResult?.location_number}. Error: ${errMsg}. HTML starts with: ${preview.substring(0, 200)}`
           );
         }
-        queryClient.invalidateQueries();
       } else {
         toast.error(data.error || "Failed to fetch revenue");
       }
     } catch {
       toast.error("Failed to fetch revenue");
+    } finally {
+      // Refresh revenue and activity even on a timeout - the server may have
+      // already written records and audit-log entries before the response.
+      queryClient.invalidateQueries();
+      setFetching(false);
     }
-    setFetching(false);
   }
 
   const rows: RevenueRowData[] = revenueRecords.map((r) => ({
