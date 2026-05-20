@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,6 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   RefreshCw,
   DollarSign,
@@ -32,9 +34,13 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  ChevronRight,
+  ChevronDown,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRevenueMachineLines } from "@/hooks/use-revenue-machine-lines";
 import type { RevenueRecord, Location } from "@/types/database";
 
 interface RevenueRecordWithLocation extends RevenueRecord {
@@ -101,13 +107,21 @@ export function RevenueClient({
 }: RevenueClientProps) {
   const [fetching, setFetching] = useState(false);
   const [stateFilter, setStateFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("company_revenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const filtered = revenueRecords.filter((r) => {
-    if (stateFilter === "all") return true;
-    return (r.locations as Record<string, string> | null)?.state === stateFilter;
+    const loc = r.locations as Record<string, string> | null;
+    if (stateFilter !== "all" && loc?.state !== stateFilter) return false;
+    if (search.trim() !== "") {
+      const q = search.toLowerCase();
+      const hay = `${loc?.location_number ?? ""} ${loc?.name ?? ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -232,16 +246,27 @@ export function RevenueClient({
 
       {/* Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Select value={stateFilter} onValueChange={(v) => v && setStateFilter(v)}>
-          <SelectTrigger className="w-full sm:w-[140px]">
-            <SelectValue placeholder="State" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All States</SelectItem>
-            <SelectItem value="VA">Virginia</SelectItem>
-            <SelectItem value="TX">Texas</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:w-[260px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search location name or number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={stateFilter} onValueChange={(v) => v && setStateFilter(v)}>
+            <SelectTrigger className="w-full sm:w-[140px]">
+              <SelectValue placeholder="State" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All States</SelectItem>
+              <SelectItem value="VA">Virginia</SelectItem>
+              <SelectItem value="TX">Texas</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         {isAdmin && (
           <Button onClick={handleFetchAll} disabled={fetching}>
@@ -297,39 +322,57 @@ export function RevenueClient({
               sorted.map((r) => {
                 const netNeg = Number(r.net_revenue) < 0;
                 const compNeg = Number(r.company_revenue) < 0;
+                const isExpanded = expandedId === r.id;
+                const loc = r.locations as Record<string, string> | null;
                 return (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium">
-                      {(r.locations as Record<string, string> | null)?.location_number}{" "}
-                      - {(r.locations as Record<string, string> | null)?.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {(r.locations as Record<string, string> | null)?.state}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {r.period_start} to {r.period_end}
-                    </TableCell>
-                    <TableCell className="text-right text-green-600">
-                      {fmt(Number(r.cash_in))}
-                    </TableCell>
-                    <TableCell className="text-right text-red-600">
-                      {fmt(Number(r.cash_out))}
-                    </TableCell>
-                    <TableCell className={`text-right font-medium ${netNeg ? "text-red-600" : ""}`}>
-                      {fmt(Number(r.net_revenue))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmt(Number(r.fee_amount))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {r.company_share_pct}%
-                    </TableCell>
-                    <TableCell className={`text-right font-bold ${compNeg ? "text-red-600" : "text-primary"}`}>
-                      {fmt(Number(r.company_revenue))}
-                    </TableCell>
-                  </TableRow>
+                  <Fragment key={r.id}>
+                    <TableRow
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                    >
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-1">
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          {loc?.location_number} - {loc?.name}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{loc?.state}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {r.period_start} to {r.period_end}
+                      </TableCell>
+                      <TableCell className="text-right text-green-600">
+                        {fmt(Number(r.cash_in))}
+                      </TableCell>
+                      <TableCell className="text-right text-red-600">
+                        {fmt(Number(r.cash_out))}
+                      </TableCell>
+                      <TableCell className={`text-right font-medium ${netNeg ? "text-red-600" : ""}`}>
+                        {fmt(Number(r.net_revenue))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {fmt(Number(r.fee_amount))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {r.company_share_pct}%
+                      </TableCell>
+                      <TableCell className={`text-right font-bold ${compNeg ? "text-red-600" : "text-primary"}`}>
+                        {fmt(Number(r.company_revenue))}
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow>
+                        <TableCell colSpan={9} className="bg-muted/30 p-0">
+                          <MachineLinesSubTable revenueRecordId={r.id} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 );
               })
             )}
@@ -340,6 +383,73 @@ export function RevenueClient({
       <p className="text-xs text-muted-foreground">
         Formula: Company Revenue = (Net Revenue - Fee) x Share %
       </p>
+    </div>
+  );
+}
+
+function MachineLinesSubTable({
+  revenueRecordId,
+}: {
+  revenueRecordId: string;
+}) {
+  const { data: lines, isLoading } = useRevenueMachineLines(revenueRecordId);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 p-4">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
+  }
+
+  if (!lines || lines.length === 0) {
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        No per-machine breakdown for this period. Re-fetch revenue to populate it.
+      </p>
+    );
+  }
+
+  return (
+    <div className="p-3">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Pos</TableHead>
+            <TableHead>Game</TableHead>
+            <TableHead className="text-right">Cash In</TableHead>
+            <TableHead className="text-right">Cash Out</TableHead>
+            <TableHead className="text-right">Net</TableHead>
+            <TableHead>Last Read</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lines.map((l) => {
+            const net = Number(l.net_revenue);
+            return (
+              <TableRow key={l.id}>
+                <TableCell>{l.position ?? "-"}</TableCell>
+                <TableCell className="font-medium">{l.game_name}</TableCell>
+                <TableCell className="text-right text-green-600">
+                  {fmt(Number(l.cash_in))}
+                </TableCell>
+                <TableCell className="text-right text-red-600">
+                  {fmt(Number(l.cash_out))}
+                </TableCell>
+                <TableCell
+                  className={`text-right font-medium ${net < 0 ? "text-red-600" : ""}`}
+                >
+                  {fmt(net)}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {l.last_read_date ?? "Never"}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -13,7 +13,8 @@ export type AuditAction =
   | "location_reopened"
   | "dispenser_added"
   | "dispenser_removed"
-  | "revenue_fetched";
+  | "revenue_fetched"
+  | "revenue_by_date_run";
 
 export interface Profile {
   id: string;
@@ -115,4 +116,24 @@ export interface MachineType {
   id: number;
   name: string;
   is_active: boolean;
+}
+
+export interface CabinetType {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
+export interface RevenueMachineLine {
+  id: string;
+  revenue_record_id: string;
+  location_id: string;
+  position: number | null;
+  ksys_game_id: string | null;
+  game_name: string;
+  cash_in: number;
+  cash_out: number;
+  net_revenue: number;
+  last_read_date: string | null;
+  created_at: string;
 }

@@ -67,7 +67,7 @@ export async function POST() {
       }
 
       // 3. Insert new record
-      const { error: insertError } = await serviceClient
+      const { data: newRecord, error: insertError } = await serviceClient
         .from("revenue_records")
         .insert({
           location_id: loc.id,
@@ -81,11 +81,49 @@ export async function POST() {
           company_revenue: companyRevenue,
           raw_data: rawData,
           fetched_at: new Date().toISOString(),
-        });
+        })
+        .select("id")
+        .single();
 
       if (insertError) {
         throw new Error(`Insert failed: ${insertError.message}`);
       }
+
+      // Insert per-machine breakdown (best effort - must not fail the fetch)
+      if (newRecord && parsed.machine_lines.length > 0) {
+        const { error: linesError } = await serviceClient
+          .from("revenue_machine_lines")
+          .insert(
+            parsed.machine_lines.map((l) => ({
+              revenue_record_id: newRecord.id,
+              location_id: loc.id,
+              position: l.position,
+              ksys_game_id: l.ksys_game_id,
+              game_name: l.game_name,
+              cash_in: l.cash_in,
+              cash_out: l.cash_out,
+              net_revenue: l.net_revenue,
+              last_read_date: l.last_read_date,
+            }))
+          );
+        if (linesError) {
+          console.error("Machine lines insert error:", linesError.message);
+        }
+      }
+
+      // Log per-location so entries appear even if the route times out
+      // before the whole batch finishes.
+      await supabase.from("audit_log").insert({
+        action: "revenue_fetched",
+        performed_by: user.id,
+        location_id: loc.id,
+        details: {
+          cash_in: parsed.cash_in,
+          cash_out: parsed.cash_out,
+          net_revenue: parsed.net_revenue,
+          company_revenue: companyRevenue,
+        },
+      });
 
       results.push({
         location_number: loc.location_number,
@@ -106,17 +144,6 @@ export async function POST() {
       });
     }
   }
-
-  await supabase.from("audit_log").insert({
-    action: "revenue_fetched",
-    performed_by: user.id,
-    details: {
-      batch: true,
-      total: locations?.length ?? 0,
-      successful: results.filter((r) => r.status === "success").length,
-      failed: results.filter((r) => r.status === "error").length,
-    },
-  });
 
   return NextResponse.json({ results });
 }

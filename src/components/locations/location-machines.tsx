@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -359,27 +359,53 @@ function MachineActionsMenu({
   locationId: string;
   inventoryMachines: Machine[];
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const pendingAction = useRef<"replace" | "remove" | null>(null);
+
+  // Opening a dialog directly from a menu item collides with the menu's own
+  // close lifecycle (focus restore + scroll-lock cleanup), which can leave the
+  // dialog unopened or the page unresponsive. Instead, record the intent, close
+  // the menu, and open the dialog only once the menu has fully closed.
+  function handleMenuOpenChange(open: boolean) {
+    setMenuOpen(open);
+    if (!open && pendingAction.current) {
+      const action = pendingAction.current;
+      pendingAction.current = null;
+      setTimeout(() => {
+        if (action === "replace") setReplaceOpen(true);
+        else setRemoveOpen(true);
+      }, 0);
+    }
+  }
 
   return (
     // stopPropagation here prevents opening the dropdown (or clicking a menu
     // item) from triggering the parent row's navigate-to-edit handler.
     <div onClick={(e) => e.stopPropagation()}>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger
           render={<Button variant="ghost" size="icon" title="Actions" />}
         >
           <MoreVertical className="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setReplaceOpen(true)}>
+          <DropdownMenuItem
+            onClick={() => {
+              pendingAction.current = "replace";
+              setMenuOpen(false);
+            }}
+          >
             <ArrowLeftRight className="h-4 w-4" />
             Replace
           </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
-            onClick={() => setRemoveOpen(true)}
+            onClick={() => {
+              pendingAction.current = "remove";
+              setMenuOpen(false);
+            }}
           >
             <Minus className="h-4 w-4" />
             Remove
@@ -426,6 +452,7 @@ function RemoveMachineDialog({
       toast.error(result.error);
     } else {
       toast.success("Machine returned to inventory");
+      onOpenChange?.(false);
       queryClient.invalidateQueries();
     }
     setLoading(false);
