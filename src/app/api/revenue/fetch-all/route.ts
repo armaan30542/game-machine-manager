@@ -87,6 +87,20 @@ export async function POST() {
         throw new Error(`Insert failed: ${insertError.message}`);
       }
 
+      // Log per-location so entries appear even if the route times out
+      // before the whole batch finishes.
+      await supabase.from("audit_log").insert({
+        action: "revenue_fetched",
+        performed_by: user.id,
+        location_id: loc.id,
+        details: {
+          cash_in: parsed.cash_in,
+          cash_out: parsed.cash_out,
+          net_revenue: parsed.net_revenue,
+          company_revenue: companyRevenue,
+        },
+      });
+
       results.push({
         location_number: loc.location_number,
         status: "success",
@@ -106,17 +120,6 @@ export async function POST() {
       });
     }
   }
-
-  await supabase.from("audit_log").insert({
-    action: "revenue_fetched",
-    performed_by: user.id,
-    details: {
-      batch: true,
-      total: locations?.length ?? 0,
-      successful: results.filter((r) => r.status === "success").length,
-      failed: results.filter((r) => r.status === "error").length,
-    },
-  });
 
   return NextResponse.json({ results });
 }
