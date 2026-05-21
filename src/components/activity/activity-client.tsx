@@ -116,7 +116,13 @@ const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
   { label: "All", actions: null },
   {
     label: "Inventory Changes",
-    actions: ["machine_created", "machine_deleted"],
+    actions: [
+      "machine_created",
+      "machine_deleted",
+      "machine_added_to_location",
+      "machine_removed_from_location",
+      "machine_replaced",
+    ],
   },
   {
     label: "Location Activity",

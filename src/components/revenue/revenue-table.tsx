@@ -103,8 +103,10 @@ function getSortValue(r: RevenueRowData, key: SortKey): string | number {
 
 interface RevenueTableProps {
   rows: RevenueRowData[];
-  /** Extra controls rendered on the right of the filter row. */
+  /** Extra controls rendered alongside the search/filter row. */
   controls?: ReactNode;
+  /** Which side the extra controls sit on (default "right"). */
+  controlsPosition?: "left" | "right";
   /** Content rendered when a row is expanded. */
   renderExpanded: (row: RevenueRowData) => ReactNode;
   /** Message shown when there are no rows. */
@@ -119,6 +121,7 @@ interface RevenueTableProps {
 export function RevenueTable({
   rows,
   controls,
+  controlsPosition = "right",
   renderExpanded,
   emptyMessage,
 }: RevenueTableProps) {
@@ -232,6 +235,7 @@ export function RevenueTable({
 
       {/* Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {controlsPosition === "left" && controls}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative w-full sm:w-[260px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -257,7 +261,7 @@ export function RevenueTable({
           </Select>
         </div>
 
-        {controls}
+        {controlsPosition === "right" && controls}
       </div>
 
       {/* Revenue table */}

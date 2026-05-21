@@ -21,10 +21,14 @@ function fmt(n: number): string {
   }).format(n);
 }
 
+function ownerPhone(line: IdleLine): string {
+  return line.locations?.contact_phone || line.locations?.phone || "—";
+}
+
 function staleLabel(line: IdleLine): string {
   if (!line.last_read_date) return "Never read";
   const d = daysSince(line.last_read_date);
-  return `${d} day${d === 1 ? "" : "s"}`;
+  return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 
 export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
@@ -34,7 +38,8 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
     return (
       <Card>
         <CardContent className="py-12 text-center text-muted-foreground">
-          No idle machines. Every machine has a recent meter read.
+          No zero-revenue machines. Every machine earned money in the latest
+          period.
         </CardContent>
       </Card>
     );
@@ -48,13 +53,15 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
             <TableHead>Location</TableHead>
             <TableHead>Pos</TableHead>
             <TableHead>Game</TableHead>
+            <TableHead>Owner Phone</TableHead>
             <TableHead>Last Read</TableHead>
-            <TableHead className="text-right">Days Stale</TableHead>
+            <TableHead className="text-right">Net Revenue</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {lines.map((l) => {
             const isExpanded = expandedId === l.id;
+            const net = Number(l.net_revenue);
             return (
               <Fragment key={l.id}>
                 <TableRow
@@ -75,16 +82,17 @@ export function IdleMachinesClient({ lines }: { lines: IdleLine[] }) {
                   </TableCell>
                   <TableCell>{l.position ?? "-"}</TableCell>
                   <TableCell>{l.game_name}</TableCell>
+                  <TableCell className="text-sm">{ownerPhone(l)}</TableCell>
                   <TableCell className="text-sm">
                     {l.last_read_date ?? "Never"}
                   </TableCell>
                   <TableCell className="text-right font-medium text-orange-600">
-                    {staleLabel(l)}
+                    {fmt(net)}
                   </TableCell>
                 </TableRow>
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={5} className="bg-muted/30">
+                    <TableCell colSpan={6} className="bg-muted/30">
                       <IdleBreakdown line={l} />
                     </TableCell>
                   </TableRow>
@@ -111,13 +119,18 @@ function IdleBreakdown({ line }: { line: IdleLine }) {
         }
       />
       <Field
+        label="Owner / Contact"
+        value={line.locations?.contact_name || "—"}
+      />
+      <Field label="Owner Phone" value={ownerPhone(line)} />
+      <Field
         label="Position"
         value={line.position != null ? String(line.position) : "-"}
       />
       <Field label="Game" value={line.game_name} />
       <Field label="ksys Game ID" value={line.ksys_game_id ?? "-"} />
       <Field label="Last Meter Read" value={line.last_read_date ?? "Never read"} />
-      <Field label="Days Stale" value={staleLabel(line)} />
+      <Field label="Meter Age" value={staleLabel(line)} />
       <Field label="Last Period Cash In" value={fmt(Number(line.cash_in))} />
       <Field label="Last Period Cash Out" value={fmt(Number(line.cash_out))} />
       <Field
