@@ -90,7 +90,10 @@ function parseMachineLines(html: string): MachineLine[] {
   const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
 
   for (const row of rows) {
-    const cells = row.match(/<td[\s\S]*?<\/td>/gi);
+    // Include both <td> and <th> - kpbd.php uses <th> as the row header for
+    // the game number while kperiod.php uses <td>; either way the cell
+    // layout is identical so they parse the same way.
+    const cells = row.match(/<t[dh][\s\S]*?<\/t[dh]>/gi);
     if (!cells || cells.length < 10) continue;
 
     const cellText = (i: number): string =>
