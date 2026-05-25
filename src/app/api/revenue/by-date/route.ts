@@ -87,6 +87,17 @@ export async function POST(request: NextRequest) {
       fee_amount: feeAmount,
       company_share_pct: sharePercent,
       company_revenue: companyRevenue,
+      // When the per-machine list comes back empty, surface a slice of the
+      // raw kpbd.php response so the parser can be adjusted to whatever
+      // markup ksys22 actually returns.
+      ...(parsed.machine_lines.length === 0 && {
+        _debug: {
+          html_length: rawData.length,
+          is_login_page: rawData.includes("klogin.css"),
+          tr_count: (rawData.match(/<tr/gi) ?? []).length,
+          html_snippet: rawData.substring(0, 6000),
+        },
+      }),
     });
   } catch (err) {
     console.error("Revenue by-date error:", err);

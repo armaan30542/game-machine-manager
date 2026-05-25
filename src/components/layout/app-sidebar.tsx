@@ -102,7 +102,7 @@ export function AppSidebar() {
                       isActive={pathname.startsWith("/revenue/idle")}
                     >
                       <AlertTriangle className="h-4 w-4" />
-                      <span>0 Revenue</span>
+                      <span>Zero Revenue</span>
                     </SidebarMenuButton>
                   </Link>
                   <SidebarMenuBadge>{idleCount}</SidebarMenuBadge>
