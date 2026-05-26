@@ -233,7 +233,7 @@ export async function GET() {
       const startIso = iso(new Date(now.getFullYear(), now.getMonth(), 1));
       const endIso = iso(yesterday);
 
-      const byDateHtml = await fetchRevenueByDate(
+      const { revenueHtml: byDateHtml, deviceHtml } = await fetchRevenueByDate(
         location.revenue_url,
         startIso,
         endIso
@@ -247,6 +247,8 @@ export async function GET() {
         machineLineCount: byDateParsed.machine_lines.length,
         machineLines: byDateParsed.machine_lines.slice(0, 5),
         resultHtml: byDateHtml.substring(0, 8000),
+        deviceHtmlLength: deviceHtml.length,
+        deviceHtmlSnippet: deviceHtml.substring(0, 8000),
       });
     } catch (e) {
       log.push({ step: "7_by_date", error: String(e) });

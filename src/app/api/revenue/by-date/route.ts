@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { parseRevenueResponse } from "@/lib/revenue-parser";
+import {
+  parseRevenueResponse,
+  parseDeviceList,
+  applyDeviceNames,
+} from "@/lib/revenue-parser";
 import { fetchRevenueByDate } from "@/lib/revenue-fetch";
 
 export const maxDuration = 30;
@@ -54,12 +58,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const rawData = await fetchRevenueByDate(
+    const { revenueHtml, deviceHtml } = await fetchRevenueByDate(
       location.revenue_url,
       start_date,
       end_date
     );
-    const parsed = parseRevenueResponse(rawData);
+    const parsed = parseRevenueResponse(revenueHtml);
+    const machineLines = applyDeviceNames(
+      parsed.machine_lines,
+      parseDeviceList(deviceHtml)
+    );
 
     const feeAmount = Number(location.fees);
     const sharePercent = Number(location.percentage_share);
@@ -83,7 +91,7 @@ export async function POST(request: NextRequest) {
       net_revenue: parsed.net_revenue,
       period_start: start_date,
       period_end: end_date,
-      machine_lines: parsed.machine_lines,
+      machine_lines: machineLines,
       fee_amount: feeAmount,
       company_share_pct: sharePercent,
       company_revenue: companyRevenue,
@@ -92,13 +100,14 @@ export async function POST(request: NextRequest) {
       // markup ksys22 actually returns.
       ...(parsed.machine_lines.length === 0 && {
         _debug: {
-          html_length: rawData.length,
-          is_login_page: rawData.includes("klogin.css"),
-          tr_count: (rawData.match(/<tr/gi) ?? []).length,
-          tables: [...rawData.matchAll(/<table[\s\S]*?<\/table>/gi)]
+          html_length: revenueHtml.length,
+          is_login_page: revenueHtml.includes("klogin.css"),
+          tr_count: (revenueHtml.match(/<tr/gi) ?? []).length,
+          tables: [...revenueHtml.matchAll(/<table[\s\S]*?<\/table>/gi)]
             .map((m) => m[0])
             .slice(0, 4),
-          html_full: rawData.substring(0, 20000),
+          html_full: revenueHtml.substring(0, 20000),
+          device_html: deviceHtml.substring(0, 8000),
         },
       }),
     });

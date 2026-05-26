@@ -329,10 +329,43 @@ async function establishSession(
   return sessionId;
 }
 
+export interface RevenueFetchResult {
+  /** Raw HTML of the revenue report (kperiod.php or kpbd.php). */
+  revenueHtml: string;
+  /** Raw HTML of the devices admin page, used to map game numbers to names. */
+  deviceHtml: string;
+}
+
+/** Fetch kdevice.php (the device/game list) using the live session. */
+async function fetchDeviceHtml(
+  client: Client,
+  basePath: string,
+  origin: string,
+  sessionId: string
+): Promise<string> {
+  try {
+    const res = await client.request({
+      path: basePath + "kdevice.php",
+      method: "GET",
+      headers: {
+        Cookie: `PHPSESSID=${sessionId}`,
+        "User-Agent": USER_AGENT,
+        Referer: origin + basePath,
+      },
+    });
+    return await res.body.text();
+  } catch {
+    return "";
+  }
+}
+
 /**
- * Fetch the current-period revenue page (kperiod.php) from ksys22.
+ * Fetch the current-period revenue page (kperiod.php) from ksys22 along
+ * with the device list (kdevice.php) over the same session.
  */
-export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
+export async function fetchRevenuePage(
+  revenueUrl: string
+): Promise<RevenueFetchResult> {
   const { origin, basePath } = resolveBase(revenueUrl);
   const client = new Client(origin, { keepAliveTimeout: 30000 });
 
@@ -349,18 +382,21 @@ export async function fetchRevenuePage(revenueUrl: string): Promise<string> {
       },
     });
 
-    const html = await periodRes.body.text();
-    if (html.includes("klogin.css")) {
+    const revenueHtml = await periodRes.body.text();
+    if (revenueHtml.includes("klogin.css")) {
       throw new Error("Login failed - got login page instead of revenue data");
     }
-    return html;
+
+    const deviceHtml = await fetchDeviceHtml(client, basePath, origin, sessionId);
+    return { revenueHtml, deviceHtml };
   } finally {
     await client.close();
   }
 }
 
 /**
- * Fetch a custom date-range revenue report (kpbd.php "Period by Date").
+ * Fetch a custom date-range revenue report (kpbd.php "Period by Date")
+ * along with the device list (kdevice.php) over the same session.
  *
  * @param startDate - "YYYY-MM-DD"
  * @param endDate   - "YYYY-MM-DD"
@@ -369,7 +405,7 @@ export async function fetchRevenueByDate(
   revenueUrl: string,
   startDate: string,
   endDate: string
-): Promise<string> {
+): Promise<RevenueFetchResult> {
   const { origin, basePath } = resolveBase(revenueUrl);
   const client = new Client(origin, { keepAliveTimeout: 30000 });
 
@@ -461,11 +497,12 @@ export async function fetchRevenueByDate(
       redirectCount++;
     }
 
-    const html = await res.body.text();
-    if (html.includes("klogin.css")) {
+    const revenueHtml = await res.body.text();
+    if (revenueHtml.includes("klogin.css")) {
       throw new Error("Login failed - got login page instead of report data");
     }
-    return html;
+    const deviceHtml = await fetchDeviceHtml(client, basePath, origin, sessionId);
+    return { revenueHtml, deviceHtml };
   } finally {
     await client.close();
   }
