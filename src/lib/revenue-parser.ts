@@ -101,11 +101,21 @@ function parseMachineLines(html: string): MachineLine[] {
         ? stripHtmlTags(cells[i]).replace(/&nbsp;?/gi, " ").trim()
         : "";
 
-    // The Game cell carries a ksys tooltip; without one, it is column 0.
+    // Game cell: prefer one carrying a ksys 'ID ...' tooltip; otherwise
+    // pick the first cell whose text reads as a small game number. The
+    // kpbd.php table has an empty leading column, so the Game cell is at
+    // index 1 - we can't just assume cell 0.
     let posIdx = cells.findIndex(
       (c) => /title=/i.test(c) && /ID\s/i.test(c)
     );
-    if (posIdx === -1) posIdx = 0;
+    if (posIdx === -1) {
+      posIdx = cells.findIndex((c) =>
+        looksLikeGameNumber(
+          stripHtmlTags(c).replace(/&nbsp;?/gi, " ").trim()
+        )
+      );
+    }
+    if (posIdx === -1) continue;
 
     const gameLabel = cellText(posIdx).replace(/\s+/g, " ").trim();
     const position = parseInt(gameLabel.replace(/\D/g, ""), 10);
@@ -157,6 +167,21 @@ function parseDate(str: string): string | null {
 
 function stripHtmlTags(str: string): string {
   return str.replace(/<[^>]*>/g, " ");
+}
+
+/**
+ * True if a cell's text looks like a ksys "Game" column value - either a
+ * bare small positive integer ("1", "12") or "Game N". Dates, money and
+ * percentages are rejected.
+ */
+function looksLikeGameNumber(text: string): boolean {
+  if (/[$/.]/.test(text)) return false;
+  const t = text.trim();
+  if (!t || t.length > 15) return false;
+  const m = t.match(/^(?:game\s+)?(\d{1,3})$/i);
+  if (!m) return false;
+  const n = parseInt(m[1], 10);
+  return n > 0 && n <= 200;
 }
 
 function parseKsys22Html(html: string): RevenueData {
