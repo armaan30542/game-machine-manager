@@ -128,16 +128,34 @@ function parseMachineLines(html: string): MachineLine[] {
     if (!/\d/.test(inText) && !/\d/.test(netText)) continue;
 
     const titleMatch = row.match(/title=(['"])(.*?)\1/i);
-    const idMatch = titleMatch?.[2].match(/ID\s+(\S+)/i);
+    let ksysGameId: string | null = null;
+    let titleName: string | null = null;
+    if (titleMatch) {
+      const t = titleMatch[2];
+      const idMatch = t.match(/ID\s+([^\s&<]+)/i);
+      if (idMatch) {
+        ksysGameId = idMatch[1];
+        const after = t
+          .replace(/ID\s+[^\s&<]+/i, "")
+          .replace(/&#0*1[03];/g, " ")
+          .replace(/[\r\n]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (after) titleName = after;
+      }
+    }
 
     const lastReadRaw = parseDate(cellText(posIdx + 2));
     const lastReadDate =
       lastReadRaw && lastReadRaw >= "2010-01-01" ? lastReadRaw : null;
 
+    const baseLabel = `Game ${position}`;
     lines.push({
       position,
-      ksys_game_id: idMatch ? idMatch[1] : null,
-      game_name: /game/i.test(gameLabel) ? gameLabel : `Game ${position}`,
+      ksys_game_id: ksysGameId,
+      // Fall back to the title's product name when available; kdevice.php
+      // (applied later) takes precedence over this when it has an entry.
+      game_name: titleName ? `${baseLabel} - ${titleName}` : baseLabel,
       cash_in: parseMoney(inText),
       cash_out: parseMoney(cellText(posIdx + 8)),
       net_revenue: parseMoney(netText),
@@ -146,6 +164,88 @@ function parseMachineLines(html: string): MachineLine[] {
   }
 
   return lines;
+}
+
+/**
+ * Parse the kdevice.php (Devices) page into a position -> game-name map.
+ * Each device row carries either a ksys 'ID K... NAME' tooltip or a plain
+ * cell with the game name; we try both. Rows without a small positive
+ * integer in any cell are skipped.
+ */
+export function parseDeviceList(html: string): Map<number, string> {
+  const map = new Map<number, string>();
+  if (!html) return map;
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
+
+  for (const row of rows) {
+    let name: string | null = null;
+    const titleMatch = row.match(/title=(['"])(ID\s+[\s\S]*?)\1/i);
+    if (titleMatch) {
+      const after = titleMatch[2]
+        .replace(/ID\s+[^\s&<]+/i, "")
+        .replace(/&#0*1[03];/g, " ")
+        .replace(/[\r\n]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (after) name = after;
+    }
+
+    const cells = row.match(/<t[dh][\s\S]*?<\/t[dh]>/gi);
+    if (!cells || cells.length < 2) continue;
+    const texts = cells.map((c) =>
+      stripHtmlTags(c).replace(/&nbsp;?/gi, " ").trim()
+    );
+
+    let position: number | null = null;
+    for (const t of texts) {
+      if (/^\d{1,3}$/.test(t)) {
+        const n = parseInt(t, 10);
+        if (n > 0 && n <= 200) {
+          position = n;
+          break;
+        }
+      }
+    }
+    if (position == null) continue;
+
+    if (!name) {
+      let best = "";
+      for (const t of texts) {
+        if (
+          /[A-Za-z]{2,}/.test(t) &&
+          !/^\d+$/.test(t) &&
+          t.length > best.length &&
+          t.length < 100
+        ) {
+          best = t;
+        }
+      }
+      if (best) name = best;
+    }
+    if (!name) continue;
+
+    map.set(position, name);
+  }
+
+  return map;
+}
+
+/**
+ * Override each machine line's game_name with "Game N - DeviceName" when
+ * the device map has an entry for that position. Lines without a matching
+ * entry are left as-is (parser may still have set a title-based name).
+ */
+export function applyDeviceNames(
+  lines: MachineLine[],
+  devices: Map<number, string>
+): MachineLine[] {
+  if (devices.size === 0) return lines;
+  return lines.map((l) => {
+    if (l.position == null) return l;
+    const realName = devices.get(l.position);
+    if (!realName) return l;
+    return { ...l, game_name: `Game ${l.position} - ${realName}` };
+  });
 }
 
 function parseDate(str: string): string | null {

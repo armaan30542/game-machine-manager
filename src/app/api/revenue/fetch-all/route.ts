@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { parseRevenueResponse } from "@/lib/revenue-parser";
+import {
+  parseRevenueResponse,
+  parseDeviceList,
+  applyDeviceNames,
+} from "@/lib/revenue-parser";
 import { fetchRevenuePage } from "@/lib/revenue-fetch";
 
 export const maxDuration = 60;
@@ -48,8 +52,14 @@ export async function POST() {
   for (const loc of locations || []) {
     try {
       // 1. Fetch and parse revenue data first
-      const rawData = await fetchRevenuePage(loc.revenue_url!);
-      const parsed = parseRevenueResponse(rawData);
+      const { revenueHtml, deviceHtml } = await fetchRevenuePage(
+        loc.revenue_url!
+      );
+      const parsed = parseRevenueResponse(revenueHtml);
+      const machineLines = applyDeviceNames(
+        parsed.machine_lines,
+        parseDeviceList(deviceHtml)
+      );
 
       const feeAmount = Number(loc.fees);
       const sharePercent = Number(loc.percentage_share);
@@ -79,7 +89,7 @@ export async function POST() {
           fee_amount: feeAmount,
           company_share_pct: sharePercent,
           company_revenue: companyRevenue,
-          raw_data: rawData,
+          raw_data: revenueHtml,
           fetched_at: new Date().toISOString(),
         })
         .select("id")
@@ -90,11 +100,11 @@ export async function POST() {
       }
 
       // Insert per-machine breakdown (best effort - must not fail the fetch)
-      if (newRecord && parsed.machine_lines.length > 0) {
+      if (newRecord && machineLines.length > 0) {
         const { error: linesError } = await serviceClient
           .from("revenue_machine_lines")
           .insert(
-            parsed.machine_lines.map((l) => ({
+            machineLines.map((l) => ({
               revenue_record_id: newRecord.id,
               location_id: loc.id,
               position: l.position,
