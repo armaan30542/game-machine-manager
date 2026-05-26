@@ -33,7 +33,8 @@ interface ByDateResult {
     html_length: number;
     is_login_page: boolean;
     tr_count: number;
-    html_snippet: string;
+    tables: string[];
+    html_full: string;
   };
 }
 
@@ -43,18 +44,33 @@ function ByDateDiagnostic({
   info: NonNullable<ByDateResult["_debug"]>;
 }) {
   return (
-    <div className="space-y-2 p-4 text-xs">
+    <div className="space-y-3 p-4 text-xs">
       <p className="text-sm text-muted-foreground">
-        No per-machine breakdown returned. Diagnostic info — copy this and
-        send it back so the parser can be tuned to the real markup:
+        No per-machine breakdown returned. Copy the tables below and send
+        them back so the parser can be tuned to the real markup:
       </p>
       <p>
         html length: {info.html_length} · &lt;tr&gt; count: {info.tr_count} ·
-        login page: {String(info.is_login_page)}
+        login page: {String(info.is_login_page)} · tables found:{" "}
+        {info.tables.length}
       </p>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded border bg-background p-2">
-        {info.html_snippet}
-      </pre>
+      {info.tables.length > 0 ? (
+        info.tables.map((t, i) => (
+          <div key={i} className="space-y-1">
+            <p className="font-medium">Table {i + 1}</p>
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded border bg-background p-2">
+              {t}
+            </pre>
+          </div>
+        ))
+      ) : (
+        <div className="space-y-1">
+          <p className="font-medium">Raw HTML</p>
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded border bg-background p-2">
+            {info.html_full}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
