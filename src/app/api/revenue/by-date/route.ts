@@ -95,7 +95,10 @@ export async function POST(request: NextRequest) {
           html_length: rawData.length,
           is_login_page: rawData.includes("klogin.css"),
           tr_count: (rawData.match(/<tr/gi) ?? []).length,
-          html_snippet: rawData.substring(0, 6000),
+          tables: [...rawData.matchAll(/<table[\s\S]*?<\/table>/gi)]
+            .map((m) => m[0])
+            .slice(0, 4),
+          html_full: rawData.substring(0, 20000),
         },
       }),
     });
