@@ -21,6 +21,7 @@ import {
   Package,
   DollarSign,
   CalendarRange,
+  CalendarClock,
   AlertTriangle,
   History,
   Settings,
@@ -45,6 +46,7 @@ const navItems: {
   { title: "Inventory", href: "/inventory", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign, exact: true },
   { title: "Revenue by Date", href: "/revenue/by-date", icon: CalendarRange },
+  { title: "Changes", href: "/changes", icon: CalendarClock },
   { title: "Activity", href: "/activity", icon: History },
 ];
 
