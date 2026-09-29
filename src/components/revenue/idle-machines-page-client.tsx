@@ -10,7 +10,7 @@ export function IdleMachinesPageClient() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">0 Revenue</h1>
+        <h1 className="text-2xl font-bold">Zero Revenue</h1>
         <p className="text-muted-foreground">
           Machines that earned $0 or less in the latest revenue period.
         </p>

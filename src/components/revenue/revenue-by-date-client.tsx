@@ -29,6 +29,50 @@ interface ByDateResult {
   fee_amount: number;
   company_share_pct: number;
   company_revenue: number;
+  _debug?: {
+    html_length: number;
+    is_login_page: boolean;
+    tr_count: number;
+    tables: string[];
+    html_full: string;
+  };
+}
+
+function ByDateDiagnostic({
+  info,
+}: {
+  info: NonNullable<ByDateResult["_debug"]>;
+}) {
+  return (
+    <div className="space-y-3 p-4 text-xs">
+      <p className="text-sm text-muted-foreground">
+        No per-machine breakdown returned. Copy the tables below and send
+        them back so the parser can be tuned to the real markup:
+      </p>
+      <p>
+        html length: {info.html_length} · &lt;tr&gt; count: {info.tr_count} ·
+        login page: {String(info.is_login_page)} · tables found:{" "}
+        {info.tables.length}
+      </p>
+      {info.tables.length > 0 ? (
+        info.tables.map((t, i) => (
+          <div key={i} className="space-y-1">
+            <p className="font-medium">Table {i + 1}</p>
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded border bg-background p-2">
+              {t}
+            </pre>
+          </div>
+        ))
+      ) : (
+        <div className="space-y-1">
+          <p className="font-medium">Raw HTML</p>
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded border bg-background p-2">
+            {info.html_full}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** YYYY-MM-DD for a Date, using local calendar parts. */
@@ -209,9 +253,13 @@ export function RevenueByDateClient({
       rows={rows}
       controls={controls}
       controlsPosition="left"
-      renderExpanded={(row) => (
-        <MachineLinesTable lines={results[row.id]?.machine_lines ?? []} />
-      )}
+      renderExpanded={(row) => {
+        const r = results[row.id];
+        if (r && r.machine_lines.length === 0 && r._debug) {
+          return <ByDateDiagnostic info={r._debug} />;
+        }
+        return <MachineLinesTable lines={r?.machine_lines ?? []} />;
+      }}
       emptyMessage={emptyMessage}
     />
   );

@@ -21,6 +21,7 @@ import {
   Package,
   DollarSign,
   CalendarRange,
+  CalendarClock,
   AlertTriangle,
   History,
   Settings,
@@ -45,6 +46,7 @@ const navItems: {
   { title: "Inventory", href: "/inventory", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign, exact: true },
   { title: "Revenue by Date", href: "/revenue/by-date", icon: CalendarRange },
+  { title: "Changes", href: "/changes", icon: CalendarClock },
   { title: "Activity", href: "/activity", icon: History },
 ];
 
@@ -102,10 +104,17 @@ export function AppSidebar() {
                       isActive={pathname.startsWith("/revenue/idle")}
                     >
                       <AlertTriangle className="h-4 w-4" />
-                      <span>0 Revenue</span>
+                      <span className="font-semibold">Zero Revenue</span>
                     </SidebarMenuButton>
                   </Link>
-                  <SidebarMenuBadge>{idleCount}</SidebarMenuBadge>
+                  {/*
+                    The badge sits inside an <li> wrapped in a Link, which
+                    breaks the peer selectors that normally position it -
+                    the explicit `top-2` puts it back on the same row.
+                  */}
+                  <SidebarMenuBadge className="top-2 h-6 min-w-6 bg-orange-500 px-1.5 text-sm font-bold text-white">
+                    {idleCount}
+                  </SidebarMenuBadge>
                 </SidebarMenuItem>
               )}
             </SidebarMenu>
