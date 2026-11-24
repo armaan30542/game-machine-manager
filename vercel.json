@@ -6,8 +6,12 @@
       "schedule": "15 6 * * *"
     },
     {
-      "path": "/api/cron/weekly",
-      "schedule": "0 12 * * 1"
+      "path": "/api/cron/weekly?slot=summer",
+      "schedule": "30 15 * * 1"
+    },
+    {
+      "path": "/api/cron/weekly?slot=winter",
+      "schedule": "30 16 * * 1"
     }
   ]
 }

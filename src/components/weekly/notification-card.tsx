@@ -143,7 +143,7 @@ export function NotificationCard() {
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Icon className="h-4 w-4" />
-          Monday notification on this device
+          Phone notification on this device (optional)
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -153,7 +153,7 @@ export function NotificationCard() {
         {status === "on" && (
           <>
             <p>
-              On. Every Monday morning this device gets last week&apos;s
+              On. Every Monday at 11:30 AM Eastern this device also gets last week&apos;s
               revenue by state, compared with the week before.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -169,8 +169,8 @@ export function NotificationCard() {
         {status === "off" && (
           <>
             <p className="text-muted-foreground">
-              Off. Turn it on to get last week&apos;s revenue by state every
-              Monday morning. Each phone or computer is turned on separately.
+              Off. Turn it on to also get last week&apos;s revenue by state every
+              Monday as a notification from the site, on top of the text.
             </p>
             <Button onClick={turnOn} disabled={busy}>
               {busy ? "Turning on…" : "Turn on notifications"}

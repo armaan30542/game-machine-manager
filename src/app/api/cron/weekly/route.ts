@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
 import { sendPush } from "@/lib/push";
-import { fetchWeek, lastTwoWeeks, stateTotals, weeklyMessage } from "@/lib/weekly";
+import { sendSmsToAll, smsConfigured } from "@/lib/sms";
+import {
+  WEEKLY_SEND_HOUR,
+  businessHour,
+  fetchWeek,
+  lastTwoWeeks,
+  stateTotals,
+  weeklyMessage,
+} from "@/lib/weekly";
 
 export const maxDuration = 300;
 
@@ -47,6 +55,7 @@ async function runWeeklyJob(
   const before = await stateTotals(service, weeks.previous.start);
 
   let push: Awaited<ReturnType<typeof sendPush>> | null = null;
+  let sms: Awaited<ReturnType<typeof sendSmsToAll>> | null = null;
   let pushSkipped: string | null = null;
   if (notify === "never") {
     pushSkipped = "not requested";
@@ -63,6 +72,11 @@ async function runWeeklyJob(
       before,
       last.errors.length
     );
+    // Texts go to the saved recipient list; the phone notification goes to
+    // any device that has it switched on. Names are left out of the log.
+    if (smsConfigured()) {
+      sms = await sendSmsToAll(service, `${message.title}\n${message.body}`);
+    }
     push = await sendPush(service, {
       ...message,
       url: "/weekly",
@@ -70,7 +84,12 @@ async function runWeeklyJob(
     });
     await service.from("app_config").upsert({
       key: sentKey,
-      value: { sent_at: new Date().toISOString(), ...push },
+      value: {
+        sent_at: new Date().toISOString(),
+        texts_sent: sms?.sent ?? 0,
+        texts_failed: sms?.failed ?? 0,
+        push,
+      },
       updated_at: new Date().toISOString(),
     });
   }
@@ -80,6 +99,11 @@ async function runWeeklyJob(
     last,
     previous,
     push,
+    sms: sms && {
+      sent: sms.sent,
+      failed: sms.failed,
+      errors: sms.errors.map((e) => e.error),
+    },
     push_skipped: pushSkipped,
     seconds: Math.round((Date.now() - started) / 1000),
   };
@@ -101,6 +125,16 @@ export async function GET(request: NextRequest) {
   }
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Vercel schedules in UTC and knows nothing of daylight saving, so the
+  // job is scheduled twice (15:30 and 16:30 UTC). Only the firing that
+  // lands in the 11 o'clock hour Eastern does the work.
+  const hour = businessHour();
+  if (hour !== WEEKLY_SEND_HOUR) {
+    return NextResponse.json({
+      skipped: `It is ${hour}:00 Eastern; the weekly job runs in the ${WEEKLY_SEND_HOUR}:00 hour.`,
+    });
   }
 
   try {
