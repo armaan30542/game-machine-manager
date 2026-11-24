@@ -10,7 +10,7 @@ export interface LocationChangeRow {
   location_number: string;
   name: string;
   city: string;
-  state: "VA" | "TX";
+  state: "VA" | "TX" | "FL";
   change: "added" | "closed";
   /** Raw value used for sorting (ISO timestamp or YYYY-MM-DD). */
   sortKey: string;
@@ -22,7 +22,7 @@ export interface MachineChangeRow extends AuditLogEntry {
   locations: {
     location_number: string;
     name: string;
-    state: "VA" | "TX";
+    state: "VA" | "TX" | "FL";
   } | null;
   machines: {
     machine_type: string;
@@ -112,7 +112,7 @@ export function useChanges(startDate: string, endDate: string) {
           location_number: l.location_number as string,
           name: l.name as string,
           city: l.city as string,
-          state: l.state as "VA" | "TX",
+          state: l.state as "VA" | "TX" | "FL",
           change: "added" as const,
           sortKey: l.created_at as string,
           dateDisplay: new Date(l.created_at as string).toLocaleDateString(),
@@ -122,7 +122,7 @@ export function useChanges(startDate: string, endDate: string) {
           location_number: l.location_number as string,
           name: l.name as string,
           city: l.city as string,
-          state: l.state as "VA" | "TX",
+          state: l.state as "VA" | "TX" | "FL",
           change: "closed" as const,
           sortKey: l.close_date as string,
           // close_date is a business date (YYYY-MM-DD); show it verbatim to

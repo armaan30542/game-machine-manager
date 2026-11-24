@@ -1,36 +1,16 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  parseRevenueResponse,
-  parseDeviceList,
-  applyDeviceNames,
-} from "@/lib/revenue-parser";
-import { fetchRevenuePage } from "@/lib/revenue-fetch";
+import { requireAdmin } from "@/lib/api-auth";
+import { refreshLocationRevenue } from "@/lib/clears";
 
 export const maxDuration = 60;
 
 export async function POST() {
-  const supabase = await createClient();
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
+  const { supabase, user } = auth;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // Use service role client to bypass RLS for delete operations
+  // Service role client: replacing the open-period rows needs to bypass RLS.
   const serviceClient = createAdminClient();
 
   const { data: locations } = await supabase
@@ -46,80 +26,21 @@ export async function POST() {
     cash_in?: number;
     cash_out?: number;
     net_revenue?: number;
+    cleared?: boolean;
     error?: string;
   }[] = [];
 
   for (const loc of locations || []) {
     try {
-      // 1. Fetch and parse revenue data first
-      const { revenueHtml, deviceHtml } = await fetchRevenuePage(
-        loc.revenue_url!
-      );
-      const parsed = parseRevenueResponse(revenueHtml);
-      const machineLines = applyDeviceNames(
-        parsed.machine_lines,
-        parseDeviceList(deviceHtml)
-      );
-
-      const feeAmount = Number(loc.fees);
-      const sharePercent = Number(loc.percentage_share);
-      const companyRevenue =
-        (parsed.net_revenue - feeAmount) * (sharePercent / 100);
-
-      // 2. Only delete old records after we have valid new data
-      const { error: deleteError } = await serviceClient
-        .from("revenue_records")
-        .delete()
-        .eq("location_id", loc.id);
-
-      if (deleteError) {
-        throw new Error(`Delete failed: ${deleteError.message}`);
-      }
-
-      // 3. Insert new record
-      const { data: newRecord, error: insertError } = await serviceClient
-        .from("revenue_records")
-        .insert({
-          location_id: loc.id,
-          period_start: parsed.period_start,
-          period_end: parsed.period_end,
-          cash_in: parsed.cash_in,
-          cash_out: parsed.cash_out,
-          net_revenue: parsed.net_revenue,
-          fee_amount: feeAmount,
-          company_share_pct: sharePercent,
-          company_revenue: companyRevenue,
-          raw_data: revenueHtml,
-          fetched_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
-
-      if (insertError) {
-        throw new Error(`Insert failed: ${insertError.message}`);
-      }
-
-      // Insert per-machine breakdown (best effort - must not fail the fetch)
-      if (newRecord && machineLines.length > 0) {
-        const { error: linesError } = await serviceClient
-          .from("revenue_machine_lines")
-          .insert(
-            machineLines.map((l) => ({
-              revenue_record_id: newRecord.id,
-              location_id: loc.id,
-              position: l.position,
-              ksys_game_id: l.ksys_game_id,
-              game_name: l.game_name,
-              cash_in: l.cash_in,
-              cash_out: l.cash_out,
-              net_revenue: l.net_revenue,
-              last_read_date: l.last_read_date,
-            }))
-          );
-        if (linesError) {
-          console.error("Machine lines insert error:", linesError.message);
+      const { parsed, companyRevenue, cleared } = await refreshLocationRevenue(
+        serviceClient,
+        {
+          id: loc.id,
+          revenue_url: loc.revenue_url!,
+          percentage_share: loc.percentage_share,
+          fees: loc.fees,
         }
-      }
+      );
 
       // Log per-location so entries appear even if the route times out
       // before the whole batch finishes.
@@ -132,6 +53,7 @@ export async function POST() {
           cash_out: parsed.cash_out,
           net_revenue: parsed.net_revenue,
           company_revenue: companyRevenue,
+          ...(cleared && { cleared_period: cleared }),
         },
       });
 
@@ -142,6 +64,7 @@ export async function POST() {
         cash_in: parsed.cash_in,
         cash_out: parsed.cash_out,
         net_revenue: parsed.net_revenue,
+        cleared: !!cleared,
       });
 
       // Small delay to avoid rate limiting

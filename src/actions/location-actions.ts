@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
-export async function getNextLocationNumber(state: "VA" | "TX") {
+export async function getNextLocationNumber(state: "VA" | "TX" | "FL") {
   const supabase = await createClient();
   const {
     data: { user },
@@ -34,7 +34,7 @@ export async function createLocation(formData: {
   address_line2?: string;
   city: string;
   county?: string;
-  state: "VA" | "TX";
+  state: "VA" | "TX" | "FL";
   zipcode: string;
   phone?: string;
   email?: string;

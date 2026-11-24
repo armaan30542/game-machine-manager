@@ -14,7 +14,9 @@ export type AuditAction =
   | "dispenser_added"
   | "dispenser_removed"
   | "revenue_fetched"
-  | "revenue_by_date_run";
+  | "revenue_by_date_run"
+  | "daily_job_run"
+  | "settlement_estimated";
 
 export interface Profile {
   id: string;
@@ -33,7 +35,7 @@ export interface Location {
   address_line2: string | null;
   city: string;
   county: string | null;
-  state: "VA" | "TX";
+  state: "VA" | "TX" | "FL";
   zipcode: string;
   phone: string | null;
   email: string | null;
@@ -136,4 +138,73 @@ export interface RevenueMachineLine {
   net_revenue: number;
   last_read_date: string | null;
   created_at: string;
+}
+
+/** A ksys22 period that has been cleared: its final figures. */
+export interface ClearedPeriod {
+  id: string;
+  location_id: string;
+  period_start: string;
+  period_end: string;
+  cleared_on: string;
+  cash_in: number;
+  cash_out: number;
+  net_revenue: number;
+  fee_amount: number;
+  company_share_pct: number;
+  company_revenue: number;
+  source: "kpbd" | "last_seen";
+  last_seen_net: number | null;
+  settlement_ref: string | null;
+  detected_at: string;
+}
+
+export interface EstimateClearedLine {
+  location_number: string;
+  name: string;
+  period_start: string;
+  period_end: string;
+  cleared_on: string;
+  net_revenue: number;
+  share_pct: number;
+  fee_amount: number;
+  estimate: number;
+  source: "kpbd" | "last_seen";
+}
+
+export interface EstimateNotClearedLine {
+  location_number: string;
+  name: string;
+  period_start: string | null;
+  running_net: number | null;
+  running_estimate: number | null;
+  share_pct: number;
+  fetched_at: string | null;
+}
+
+export interface EstimateDetails {
+  cleared: EstimateClearedLine[];
+  not_cleared: EstimateNotClearedLine[];
+  no_link: { location_number: string; name: string }[];
+}
+
+/** Estimate-versus-actual snapshot for one settlement sheet and state. */
+export interface SettlementEstimate {
+  id: string;
+  statement_id: string;
+  state: string;
+  statement_period: string | null;
+  sheet_date: string | null;
+  estimate: number;
+  actual: number | null;
+  cleared_count: number;
+  not_cleared_count: number;
+  details: EstimateDetails;
+  created_at: string;
+}
+
+export interface MonthlySnapshotRow {
+  month: string;
+  taken_at: string;
+  is_baseline: boolean;
 }

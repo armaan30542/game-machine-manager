@@ -73,6 +73,7 @@ export function LocationsClient({ locations }: LocationsClientProps) {
             <SelectItem value="all">All States</SelectItem>
             <SelectItem value="VA">Virginia</SelectItem>
             <SelectItem value="TX">Texas</SelectItem>
+            <SelectItem value="FL">Florida</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>

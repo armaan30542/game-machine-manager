@@ -52,6 +52,7 @@ export function useDashboardData() {
         activeLocations: activeLocations ?? 0,
         vaCount: stateBreakdown?.filter((l) => l.state === "VA").length ?? 0,
         txCount: stateBreakdown?.filter((l) => l.state === "TX").length ?? 0,
+        flCount: stateBreakdown?.filter((l) => l.state === "FL").length ?? 0,
         deployedMachines: deployedMachines ?? 0,
         inventoryMachines: inventoryMachines ?? 0,
         deployedDispensers: deployedDispensers ?? 0,

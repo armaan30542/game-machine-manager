@@ -169,6 +169,15 @@ export function DashboardClient() {
                 </div>
                 <span className="text-2xl font-bold">{data.txCount}</span>
               </div>
+              {data.flCount > 0 && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">FL</Badge>
+                    <span className="text-sm">Florida</span>
+                  </div>
+                  <span className="text-2xl font-bold">{data.flCount}</span>
+                </div>
+              )}
               <div className="mt-4 h-2 rounded-full bg-gray-100 overflow-hidden">
                 <div
                   className="h-full bg-primary rounded-full"
@@ -183,7 +192,10 @@ export function DashboardClient() {
               </div>
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>VA: {data.vaCount}</span>
-                <span>TX: {data.txCount}</span>
+                <span>
+                  TX: {data.txCount}
+                  {data.flCount > 0 && ` · FL: ${data.flCount}`}
+                </span>
               </div>
             </div>
           </CardContent>

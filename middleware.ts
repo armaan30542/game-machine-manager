@@ -38,7 +38,10 @@ export async function middleware(request: NextRequest) {
     !pathname.startsWith("/auth") &&
     !pathname.startsWith("/forgot-password") &&
     !pathname.startsWith("/reset-password") &&
-    !pathname.startsWith("/set-password")
+    !pathname.startsWith("/set-password") &&
+    // The daily job is called by Vercel Cron with a bearer secret, not a
+    // user session; the route checks the secret itself.
+    !pathname.startsWith("/api/cron")
   ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";

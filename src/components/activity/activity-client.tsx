@@ -106,6 +106,16 @@ const ACTION_META: Record<
     color: "bg-purple-100 text-purple-800",
     icon: CalendarRange,
   },
+  daily_job_run: {
+    label: "Daily Job",
+    color: "bg-slate-100 text-slate-800",
+    icon: CalendarRange,
+  },
+  settlement_estimated: {
+    label: "Settlement Estimate",
+    color: "bg-purple-100 text-purple-800",
+    icon: DollarSign,
+  },
 };
 
 interface ActivityClientProps {
@@ -136,7 +146,15 @@ const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
       "location_reopened",
     ],
   },
-  { label: "Revenue", actions: ["revenue_fetched", "revenue_by_date_run"] },
+  {
+    label: "Revenue",
+    actions: [
+      "revenue_fetched",
+      "revenue_by_date_run",
+      "daily_job_run",
+      "settlement_estimated",
+    ],
+  },
 ];
 
 export function ActivityClient({ auditLog }: ActivityClientProps) {

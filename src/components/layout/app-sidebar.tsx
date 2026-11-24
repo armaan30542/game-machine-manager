@@ -27,6 +27,9 @@ import {
   Settings,
   Gamepad2,
   LogOut,
+  Calculator,
+  CalendarDays,
+  BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useProfile } from "@/hooks/use-profile";
@@ -46,11 +49,14 @@ const navItems: {
   { title: "Inventory", href: "/inventory", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign, exact: true },
   { title: "Revenue by Date", href: "/revenue/by-date", icon: CalendarRange },
+  { title: "Estimates", href: "/estimates", icon: Calculator },
   { title: "Changes", href: "/changes", icon: CalendarClock },
+  { title: "Monthly Changes", href: "/monthly-changes", icon: CalendarDays },
   { title: "Activity", href: "/activity", icon: History },
 ];
 
 const adminItems = [
+  { title: "Settlement Ledger", href: "/ledger", icon: BookOpen },
   { title: "Settings", href: "/settings", icon: Settings },
 ];
 

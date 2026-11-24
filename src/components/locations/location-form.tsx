@@ -44,7 +44,7 @@ export function LocationForm({ location }: LocationFormProps) {
     address_line2: location?.address_line2 ?? "",
     city: location?.city ?? "",
     county: location?.county ?? "",
-    state: (location?.state as "VA" | "TX") ?? "VA",
+    state: (location?.state as "VA" | "TX" | "FL") ?? "VA",
     zipcode: location?.zipcode ?? "",
     phone: location?.phone ?? "",
     email: location?.email ?? "",
@@ -59,7 +59,7 @@ export function LocationForm({ location }: LocationFormProps) {
 
   useEffect(() => {
     if (isEdit) return;
-    getNextLocationNumber(form.state as "VA" | "TX").then((res) => {
+    getNextLocationNumber(form.state as "VA" | "TX" | "FL").then((res) => {
       if (res.number) setPreviewNumber(res.number);
     });
   }, [form.state, isEdit]);
@@ -193,6 +193,7 @@ export function LocationForm({ location }: LocationFormProps) {
                 <SelectContent>
                   <SelectItem value="VA">Virginia</SelectItem>
                   <SelectItem value="TX">Texas</SelectItem>
+                  <SelectItem value="FL">Florida</SelectItem>
                 </SelectContent>
               </Select>
             </div>
