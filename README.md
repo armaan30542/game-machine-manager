@@ -60,14 +60,22 @@ Hobby plan Vercel may start a job any time within its scheduled hour. Each run:
 
 1. reads last week's revenue (Monday to Sunday) for every active location from ksys22
    "Period by Date", and the week before it if it is not stored yet;
-2. sends one push notification with net revenue and the company share per state,
-   compared with the week before. It is sent once per week.
+2. sends the week's message with net revenue and the company share per state,
+   compared with the week before: a text to everyone on the recipient list, and a
+   phone notification to any device that has it switched on. It is sent once per week.
+
+**Text messages (Twilio).** Set three environment variables in Vercel:
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM` (the sending number in
+`+1…` form, or a Messaging Service SID starting with `MG`). Admins manage who gets the
+text on the Weekly Revenue page; the list is kept in `app_config`, which only the
+service role can read. Without the Twilio settings no texts are sent.
 
 Each week is read by date, so a clear in the middle of a week does not affect it. A
 machine whose meter was reset inside the week shows a negative amount on ksys22; it is
 counted from zero.
 
-People turn the notification on per device on the Weekly Revenue page (`/weekly`). On
+**Phone notifications (optional).** People turn the notification on per device on the
+Weekly Revenue page (`/weekly`). On
 an iPhone or iPad the site has to be added to the home screen first. The push signing
 keys are created by the app on first use and kept in `app_config`, so there is nothing
 to configure; `VAPID_SUBJECT` (a `mailto:` address) is optional.

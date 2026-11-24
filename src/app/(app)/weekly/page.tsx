@@ -7,7 +7,7 @@ export default function WeeklyPage() {
         <h1 className="text-2xl font-bold">Weekly Revenue</h1>
         <p className="text-sm text-muted-foreground">
           Revenue by state for each Monday-to-Sunday week, compared with the
-          week before, and the Monday notification that reports it.
+          week before, and the Monday text that reports it.
         </p>
       </div>
       <WeeklyClient />

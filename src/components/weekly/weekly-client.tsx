@@ -31,6 +31,7 @@ import {
   useSort,
 } from "@/components/shared/sortable";
 import { NotificationCard } from "@/components/weekly/notification-card";
+import { SmsCard } from "@/components/weekly/sms-card";
 import { useWeekly, type WeeklyLocation } from "@/hooks/use-weekly";
 import { useProfile } from "@/hooks/use-profile";
 
@@ -167,7 +168,18 @@ export function WeeklyClient() {
         left ? `${left} left; run it again to finish.` : "",
         kind === "send"
           ? body.push
-            ? `Notification sent to ${body.push.sent} device${body.push.sent === 1 ? "" : "s"}.`
+            ? [
+                body.sms
+                  ? `Texted ${body.sms.sent} ${body.sms.sent === 1 ? "person" : "people"}${
+                      body.sms.failed ? `, ${body.sms.failed} failed` : ""
+                    }.`
+                  : "No texts sent: Twilio is not set up.",
+                body.push.sent
+                  ? `Phone notification sent to ${body.push.sent} device${body.push.sent === 1 ? "" : "s"}.`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")
             : `Not sent: ${body.push_skipped}.`
           : "",
       ].filter(Boolean);
@@ -218,20 +230,29 @@ export function WeeklyClient() {
         disabled={running !== null}
       >
         <Send className="mr-2 h-4 w-4" />
-        {running === "send" ? "Sending…" : "Send the notification now"}
+        {running === "send" ? "Sending…" : "Send this week's message now"}
       </Button>
+    </div>
+  );
+
+  // The text list is for admins; the per-device notification is for anyone.
+  const notices = (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {isAdmin && <SmsCard />}
+      <NotificationCard />
     </div>
   );
 
   if (!selected || !view) {
     return (
       <div className="space-y-6">
-        <NotificationCard />
+        {notices}
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-muted-foreground">
-              No weekly figures yet. They are read from ksys22 every Monday
-              morning, for the week that just ended and the one before it.
+              No weekly figures yet. They are read from ksys22 every Monday at
+              11:30 AM Eastern, for the week that just ended and the one
+              before it.
             </p>
             {isAdmin && <div className="flex justify-center">{adminButtons}</div>}
           </CardContent>
@@ -269,7 +290,7 @@ export function WeeklyClient() {
 
   return (
     <div className="space-y-6">
-      <NotificationCard />
+      {notices}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Select value={selected} onValueChange={(v) => v && setWeek(v)}>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
 import { sendPush } from "@/lib/push";
+import { sendSmsToAll, smsConfigured } from "@/lib/sms";
 import {
   WEEKLY_SEND_HOUR,
   businessHour,
@@ -54,6 +55,7 @@ async function runWeeklyJob(
   const before = await stateTotals(service, weeks.previous.start);
 
   let push: Awaited<ReturnType<typeof sendPush>> | null = null;
+  let sms: Awaited<ReturnType<typeof sendSmsToAll>> | null = null;
   let pushSkipped: string | null = null;
   if (notify === "never") {
     pushSkipped = "not requested";
@@ -70,6 +72,11 @@ async function runWeeklyJob(
       before,
       last.errors.length
     );
+    // Texts go to the saved recipient list; the phone notification goes to
+    // any device that has it switched on. Names are left out of the log.
+    if (smsConfigured()) {
+      sms = await sendSmsToAll(service, `${message.title}\n${message.body}`);
+    }
     push = await sendPush(service, {
       ...message,
       url: "/weekly",
@@ -77,7 +84,12 @@ async function runWeeklyJob(
     });
     await service.from("app_config").upsert({
       key: sentKey,
-      value: { sent_at: new Date().toISOString(), ...push },
+      value: {
+        sent_at: new Date().toISOString(),
+        texts_sent: sms?.sent ?? 0,
+        texts_failed: sms?.failed ?? 0,
+        push,
+      },
       updated_at: new Date().toISOString(),
     });
   }
@@ -87,6 +99,11 @@ async function runWeeklyJob(
     last,
     previous,
     push,
+    sms: sms && {
+      sent: sms.sent,
+      failed: sms.failed,
+      errors: sms.errors.map((e) => e.error),
+    },
     push_skipped: pushSkipped,
     seconds: Math.round((Date.now() - started) / 1000),
   };
