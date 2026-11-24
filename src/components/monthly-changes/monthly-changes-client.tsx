@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Camera, MapPin, ArrowLeftRight, Package } from "lucide-react";
+import { Camera, MapPin, ArrowLeftRight, Package, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import {
+  SortHead,
+  matchesSearch,
+  sortRows,
+  useSort,
+} from "@/components/shared/sortable";
 import { useProfile } from "@/hooks/use-profile";
 import { useSnapshotList, useMonthlyChanges } from "@/hooks/use-monthly-changes";
 import {
@@ -85,6 +92,11 @@ export function MonthlyChangesClient() {
   const [selection, setSelection] = useState<string | null>(null);
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [taking, setTaking] = useState(false);
+  const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState("all");
+  const locSort = useSort<"location" | "state" | "change">("location");
+  const machSort = useSort<"machine" | "change" | "from" | "to">("change");
+  const dispSort = useSort<"dispenser" | "change" | "from" | "to">("change");
 
   // Months that can be reported: a snapshot with an earlier one to compare.
   const reportable = snapshots.slice(0, -1);
@@ -155,9 +167,59 @@ export function MonthlyChangesClient() {
 
   const inState = (s: string) => stateFilter === "all" || s === stateFilter;
   const diff = changes?.diff;
-  const locations = (diff?.locations ?? []).filter((c) => inState(c.state));
-  const machines = (diff?.machines ?? []).filter((c) => inState(c.state));
-  const dispensers = (diff?.dispensers ?? []).filter((c) => inState(c.state));
+  const inKind = (kind: string) => kindFilter === "all" || kind === kindFilter;
+  const fieldText = (fields: FieldChange[]) =>
+    fields.map((f) => `${f.label} ${f.before} ${f.after}`).join(" ");
+  const kindLabel = (kind: string) => KIND_META[kind]?.label ?? kind;
+
+  const locations = sortRows(
+    (diff?.locations ?? []).filter(
+      (c) =>
+        inState(c.state) &&
+        inKind(c.kind) &&
+        matchesSearch(search, c.location_number, c.name, fieldText(c.fields))
+    ),
+    locSort,
+    {
+      location: (c) => c.location_number,
+      state: (c) => c.state,
+      change: (c) => kindLabel(c.kind),
+    }
+  );
+  const machines = sortRows(
+    (diff?.machines ?? []).filter(
+      (c) =>
+        inState(c.state) &&
+        inKind(c.kind) &&
+        matchesSearch(search, c.machine, c.from, c.to, fieldText(c.fields))
+    ),
+    machSort,
+    {
+      machine: (c) => c.machine,
+      change: (c) => kindLabel(c.kind),
+      from: (c) => c.from,
+      to: (c) => c.to,
+    }
+  );
+  const dispensers = sortRows(
+    (diff?.dispensers ?? []).filter(
+      (c) =>
+        inState(c.state) &&
+        inKind(c.kind) &&
+        matchesSearch(search, c.dispenser, c.from, c.to)
+    ),
+    dispSort,
+    {
+      dispenser: (c) => c.dispenser,
+      change: (c) => kindLabel(c.kind),
+      from: (c) => c.from,
+      to: (c) => c.to,
+    }
+  );
+  // Summary tiles count the whole month for the chosen state, whatever the
+  // search and change filters are showing below.
+  const allLocations = (diff?.locations ?? []).filter((c) => inState(c.state));
+  const allMachines = (diff?.machines ?? []).filter((c) => inState(c.state));
   const count = (rows: (LocationChange | MachineChange)[], kinds: string[]) =>
     rows.filter((r) => kinds.includes(r.kind)).length;
 
@@ -191,6 +253,30 @@ export function MonthlyChangesClient() {
             <SelectItem value="FL">Florida</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={kindFilter} onValueChange={(v) => v && setKindFilter(v)}>
+          <SelectTrigger className="w-full sm:w-[160px]">
+            <SelectValue placeholder="Change" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All changes</SelectItem>
+            {Object.entries(KIND_META).map(([kind, meta]) => (
+              <SelectItem key={kind} value={kind}>
+                {meta.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="relative w-full sm:w-[260px]">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            aria-label="Search changes"
+            placeholder="Search location, machine, value…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
       </div>
 
       {changes && (
@@ -217,22 +303,22 @@ export function MonthlyChangesClient() {
             <Summary
               title="Active locations"
               value={`${diff.counts.locationsBefore} → ${diff.counts.locationsAfter}`}
-              detail={`${count(locations, ["added"])} added, ${count(locations, ["closed"])} closed`}
+              detail={`${count(allLocations, ["added"])} added, ${count(allLocations, ["closed"])} closed`}
             />
             <Summary
               title="Location edits"
-              value={String(count(locations, ["edited"]))}
+              value={String(count(allLocations, ["edited"]))}
               detail="Share %, fees, contract, links, contacts"
             />
             <Summary
               title="Deployed machines"
               value={`${diff.counts.deployedBefore} → ${diff.counts.deployedAfter}`}
-              detail={`${count(machines, ["placed", "new"])} placed or new, ${count(machines, ["removed", "deleted"])} removed`}
+              detail={`${count(allMachines, ["placed", "new"])} placed or new, ${count(allMachines, ["removed", "deleted"])} removed`}
             />
             <Summary
               title="Machines in inventory"
               value={`${diff.counts.inventoryBefore} → ${diff.counts.inventoryAfter}`}
-              detail={`${count(machines, ["moved"])} moved between locations`}
+              detail={`${count(allMachines, ["moved"])} moved between locations`}
             />
           </div>
 
@@ -248,9 +334,9 @@ export function MonthlyChangesClient() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Location</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead>Change</TableHead>
+                      <SortHead label="Location" column="location" sort={locSort} />
+                      <SortHead label="State" column="state" sort={locSort} />
+                      <SortHead label="Change" column="change" sort={locSort} />
                       <TableHead>What changed</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -293,10 +379,10 @@ export function MonthlyChangesClient() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Machine</TableHead>
-                      <TableHead>Change</TableHead>
-                      <TableHead>From</TableHead>
-                      <TableHead>To</TableHead>
+                      <SortHead label="Machine" column="machine" sort={machSort} />
+                      <SortHead label="Change" column="change" sort={machSort} />
+                      <SortHead label="From" column="from" sort={machSort} />
+                      <SortHead label="To" column="to" sort={machSort} />
                       <TableHead>What changed</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -336,10 +422,10 @@ export function MonthlyChangesClient() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Dispenser</TableHead>
-                      <TableHead>Change</TableHead>
-                      <TableHead>From</TableHead>
-                      <TableHead>To</TableHead>
+                      <SortHead label="Dispenser" column="dispenser" sort={dispSort} />
+                      <SortHead label="Change" column="change" sort={dispSort} />
+                      <SortHead label="From" column="from" sort={dispSort} />
+                      <SortHead label="To" column="to" sort={dispSort} />
                     </TableRow>
                   </TableHeader>
                   <TableBody>

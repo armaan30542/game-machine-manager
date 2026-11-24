@@ -1,12 +1,20 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -23,7 +31,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useEstimates } from "@/hooks/use-estimates";
+import {
+  SortHead,
+  matchesSearch,
+  sortRows,
+  useSort,
+} from "@/components/shared/sortable";
+import { useEstimates, type EstimateLocation } from "@/hooks/use-estimates";
 import { useProfile } from "@/hooks/use-profile";
 import type { SettlementEstimate } from "@/types/database";
 
@@ -33,6 +47,11 @@ const STATE_NAMES: Record<string, string> = {
   FL: "Florida",
 };
 const STATE_ORDER = ["TX", "VA", "FL"];
+
+/** A link counts as not refreshed when the last good read is older than this. */
+const STALE_HOURS = 48;
+/** A location counts as not reporting when no machine has been read for this long. */
+const IDLE_DAYS = 3;
 
 const money = (n: number | null | undefined) =>
   n === null || n === undefined
@@ -53,34 +72,150 @@ const day = (iso: string | null | undefined) => {
 };
 
 type StateFilter = "all" | "TX" | "VA" | "FL";
+type ProblemKind = "missing" | "broken" | "not_updating";
+
+const PROBLEM_META: Record<ProblemKind, { label: string; color: string }> = {
+  missing: { label: "Missing link", color: "bg-slate-100 text-slate-800" },
+  broken: { label: "Broken link", color: "bg-red-100 text-red-800" },
+  not_updating: { label: "Not updating", color: "bg-orange-100 text-orange-800" },
+};
+
+/** Location name linking to its page, plus its ksys22 revenue page. */
+function LocationLinks({ location }: { location: EstimateLocation }) {
+  const url =
+    location.revenue_url && /^https?:\/\//i.test(location.revenue_url)
+      ? location.revenue_url
+      : null;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Link
+        href={`/locations/${location.id}`}
+        className="font-medium hover:underline"
+      >
+        {location.location_number} - {location.name}
+      </Link>
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open this location's ksys22 revenue page"
+          aria-label={`Open the ksys22 revenue page for ${location.name}`}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      )}
+    </span>
+  );
+}
 
 export function EstimatesClient() {
-  const { data, isLoading } = useEstimates();
+  const { data, isLoading, dataUpdatedAt } = useEstimates();
   const { isAdmin } = useProfile();
   const queryClient = useQueryClient();
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+  const [search, setSearch] = useState("");
+  const [problemFilter, setProblemFilter] = useState<"all" | ProblemKind>("all");
   const [running, setRunning] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const problemSort = useSort<"location" | "state" | "problem" | "since">("problem");
+  const clearedSort = useSort<
+    "location" | "state" | "period" | "cleared" | "net" | "share" | "estimate"
+  >("cleared", "desc");
+  const openSort = useSort<
+    "location" | "state" | "started" | "net" | "estimate" | "checked"
+  >("location");
+  const sheetSort = useSort<
+    "sheet" | "state" | "date" | "estimate" | "actual" | "diff" | "cleared" | "open"
+  >("date", "desc");
 
   const view = useMemo(() => {
     if (!data) return null;
     const locById = new Map(data.locations.map((l) => [l.id, l]));
+    const locByNumber = new Map(data.locations.map((l) => [l.location_number, l]));
     const runningByLoc = new Map(data.running.map((r) => [r.location_id, r]));
     const clearedLocIds = new Set(data.openPeriods.map((p) => p.location_id));
 
     const cleared = data.openPeriods
-      .map((p) => ({ ...p, location: locById.get(p.location_id) }))
+      .map((p) => ({ ...p, location: locById.get(p.location_id)! }))
       .filter((p) => p.location);
     const notCleared = data.locations
       .filter((l) => !l.close_date && l.revenue_url && !clearedLocIds.has(l.id))
       .map((l) => ({ location: l, record: runningByLoc.get(l.id) ?? null }));
-    const noLink = data.locations.filter((l) => !l.close_date && !l.revenue_url);
+
+    // Links that need attention: missing, broken, or not updating.
+    const now = dataUpdatedAt || 0;
+    const problems: {
+      location: EstimateLocation;
+      kind: ProblemKind;
+      detail: string;
+      since: string | null;
+    }[] = [];
+    for (const l of data.locations) {
+      if (l.close_date) continue;
+      if (!l.revenue_url) {
+        problems.push({
+          location: l,
+          kind: "missing",
+          detail: "No ksys22 revenue link is saved for this location.",
+          since: null,
+        });
+        continue;
+      }
+      const record = runningByLoc.get(l.id);
+      const failure = data.latestFailure.get(l.id);
+      if (failure && (!record || failure.created_at > record.fetched_at)) {
+        problems.push({
+          location: l,
+          kind: "broken",
+          detail: `${failure.error}${
+            record ? ` Last good read ${day(record.fetched_at)}.` : " Never read successfully."
+          }`,
+          since: failure.created_at,
+        });
+        continue;
+      }
+      if (!record) {
+        problems.push({
+          location: l,
+          kind: "not_updating",
+          detail: "This link has never been read.",
+          since: null,
+        });
+        continue;
+      }
+      const hoursOld = (now - new Date(record.fetched_at).getTime()) / 3_600_000;
+      if (hoursOld > STALE_HOURS) {
+        problems.push({
+          location: l,
+          kind: "not_updating",
+          detail: `Not refreshed since ${day(record.fetched_at)}.`,
+          since: record.fetched_at,
+        });
+        continue;
+      }
+      const lastRead = data.lastMachineRead.get(l.id);
+      if (lastRead) {
+        const daysOld =
+          (now - new Date(lastRead + "T12:00:00").getTime()) / 86_400_000;
+        if (daysOld > IDLE_DAYS) {
+          problems.push({
+            location: l,
+            kind: "not_updating",
+            detail: `The link works, but no machine has reported since ${day(lastRead)}.`,
+            since: lastRead,
+          });
+        }
+      }
+    }
 
     const states = STATE_ORDER.filter((s) =>
       data.locations.some((l) => l.state === s && !l.close_date)
     );
     const byState = states.map((s) => {
-      const c = cleared.filter((p) => p.location!.state === s);
+      const c = cleared.filter((p) => p.location.state === s);
       const n = notCleared.filter((x) => x.location.state === s);
       return {
         state: s,
@@ -94,8 +229,8 @@ export function EstimatesClient() {
       };
     });
 
-    return { cleared, notCleared, noLink, byState };
-  }, [data]);
+    return { cleared, notCleared, problems, byState, locByNumber };
+  }, [data, dataUpdatedAt]);
 
   async function runDailyJob() {
     setRunning(true);
@@ -106,10 +241,13 @@ export function EstimatesClient() {
         toast.error(body.error || "The check did not finish");
       } else {
         const found = body.cleared?.length ?? 0;
+        const failed = body.errors?.length ?? 0;
         toast.success(
           `Checked ${body.refreshed} locations. ${
             found ? `${found} cleared since the last check.` : "No new clears."
-          }${body.skipped ? ` ${body.skipped} left for the next run.` : ""}`
+          }${failed ? ` ${failed} could not be read; see the link report.` : ""}${
+            body.skipped ? ` ${body.skipped} left for the next run.` : ""
+          }`
         );
         queryClient.invalidateQueries({ queryKey: ["estimates"] });
         queryClient.invalidateQueries({ queryKey: ["revenue"] });
@@ -142,13 +280,89 @@ export function EstimatesClient() {
   }
 
   const inState = (s: string) => stateFilter === "all" || s === stateFilter;
-  const cleared = view.cleared.filter((p) => inState(p.location!.state));
-  const notCleared = view.notCleared.filter((x) => inState(x.location.state));
-  const settlements = data.settlements.filter((s) => inState(s.state));
+  const matchLoc = (l: EstimateLocation) =>
+    inState(l.state) && matchesSearch(search, l.location_number, l.name);
+
+  const problems = sortRows(
+    view.problems.filter(
+      (p) =>
+        matchLoc(p.location) &&
+        (problemFilter === "all" || p.kind === problemFilter)
+    ),
+    problemSort,
+    {
+      location: (p) => p.location.location_number,
+      state: (p) => p.location.state,
+      problem: (p) => ["broken", "not_updating", "missing"].indexOf(p.kind),
+      since: (p) => p.since,
+    }
+  );
+  const cleared = sortRows(
+    view.cleared.filter((p) => matchLoc(p.location)),
+    clearedSort,
+    {
+      location: (p) => p.location.location_number,
+      state: (p) => p.location.state,
+      period: (p) => p.period_start,
+      cleared: (p) => p.cleared_on,
+      net: (p) => Number(p.net_revenue),
+      share: (p) => Number(p.company_share_pct),
+      estimate: (p) => Number(p.company_revenue),
+    }
+  );
+  const notCleared = sortRows(
+    view.notCleared.filter((x) => matchLoc(x.location)),
+    openSort,
+    {
+      location: (x) => x.location.location_number,
+      state: (x) => x.location.state,
+      started: (x) => x.record?.period_start,
+      net: (x) => (x.record ? Number(x.record.net_revenue) : null),
+      estimate: (x) => (x.record ? Number(x.record.company_revenue) : null),
+      checked: (x) => x.record?.fetched_at,
+    }
+  );
+  const settlements = sortRows(
+    data.settlements.filter(
+      (s) =>
+        inState(s.state) &&
+        matchesSearch(search, s.statement_period, s.statement_id, s.state)
+    ),
+    sheetSort,
+    {
+      sheet: (s) => s.statement_period ?? s.statement_id,
+      state: (s) => s.state,
+      date: (s) => s.sheet_date ?? s.created_at,
+      estimate: (s) => Number(s.estimate),
+      actual: (s) => (s.actual === null ? null : Number(s.actual)),
+      diff: (s) =>
+        s.actual === null ? null : Number(s.actual) - Number(s.estimate),
+      cleared: (s) => s.cleared_count,
+      open: (s) => s.not_cleared_count,
+    }
+  );
+
+  const clearedTotal = cleared.reduce((t, p) => t + Number(p.company_revenue), 0);
+  const runningTotal = notCleared.reduce(
+    (t, x) => t + Number(x.record?.company_revenue ?? 0),
+    0
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      {/* Filters: one row, applied to every table below */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:w-[280px]">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            aria-label="Search locations"
+            placeholder="Search location name or number…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
         <Select
           value={stateFilter}
           onValueChange={(v) => v && setStateFilter(v as StateFilter)}
@@ -164,7 +378,12 @@ export function EstimatesClient() {
           </SelectContent>
         </Select>
         {isAdmin && (
-          <Button onClick={runDailyJob} disabled={running} variant="outline">
+          <Button
+            onClick={runDailyJob}
+            disabled={running}
+            variant="outline"
+            className="sm:ml-auto"
+          >
             <RefreshCw className={`mr-2 h-4 w-4 ${running ? "animate-spin" : ""}`} />
             {running ? "Checking ksys22…" : "Check for clears now"}
           </Button>
@@ -197,6 +416,81 @@ export function EstimatesClient() {
         ))}
       </div>
 
+      {/* Links needing attention */}
+      <Card>
+        <CardHeader className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-lg">
+              Links needing attention ({problems.length})
+            </CardTitle>
+            <Select
+              value={problemFilter}
+              onValueChange={(v) =>
+                v && setProblemFilter(v as "all" | ProblemKind)
+              }
+            >
+              <SelectTrigger className="w-full sm:w-[170px]">
+                <SelectValue placeholder="Problem" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All problems</SelectItem>
+                <SelectItem value="broken">Broken link</SelectItem>
+                <SelectItem value="not_updating">Not updating</SelectItem>
+                <SelectItem value="missing">Missing link</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Active locations with no ksys22 link, a link whose last read
+            failed, a link not refreshed in {STALE_HOURS} hours, or no machine
+            reporting for {IDLE_DAYS} days. These have no reliable estimate.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHead label="Location" column="location" sort={problemSort} />
+                  <SortHead label="State" column="state" sort={problemSort} />
+                  <SortHead label="Problem" column="problem" sort={problemSort} />
+                  <TableHead>Detail</TableHead>
+                  <SortHead label="Since" column="since" sort={problemSort} />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {problems.length === 0 ? (
+                  <EmptyRow span={5} text="Every link is saved, readable and up to date." />
+                ) : (
+                  problems.map((p) => (
+                    <TableRow key={p.location.id}>
+                      <TableCell>
+                        <LocationLinks location={p.location} />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{p.location.state}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`border-0 ${PROBLEM_META[p.kind].color}`}
+                        >
+                          {PROBLEM_META[p.kind].label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-normal text-sm">
+                        {p.detail}
+                      </TableCell>
+                      <TableCell>{day(p.since)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Cleared, awaiting a sheet */}
       <Card>
         <CardHeader>
@@ -213,58 +507,64 @@ export function EstimatesClient() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Location</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Cleared on</TableHead>
-                  <TableHead className="text-right">Period net</TableHead>
-                  <TableHead className="text-right">% share</TableHead>
-                  <TableHead className="text-right">Estimate</TableHead>
+                  <SortHead label="Location" column="location" sort={clearedSort} />
+                  <SortHead label="State" column="state" sort={clearedSort} />
+                  <SortHead label="Period" column="period" sort={clearedSort} />
+                  <SortHead label="Cleared on" column="cleared" sort={clearedSort} />
+                  <SortHead label="Period net" column="net" sort={clearedSort} align="right" />
+                  <SortHead label="% share" column="share" sort={clearedSort} align="right" />
+                  <SortHead label="Estimate" column="estimate" sort={clearedSort} align="right" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cleared.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="py-8 text-center text-muted-foreground"
-                    >
-                      Nothing has cleared since the last settlement sheet.
-                    </TableCell>
-                  </TableRow>
+                  <EmptyRow
+                    span={7}
+                    text="Nothing has cleared since the last settlement sheet."
+                  />
                 ) : (
-                  cleared.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-medium">
-                        {p.location!.location_number} - {p.location!.name}
+                  <>
+                    {cleared.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <LocationLinks location={p.location} />
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{p.location.state}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {day(p.period_start)} to {day(p.period_end)}
+                          {p.source === "last_seen" && (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 border-orange-300 text-orange-700"
+                              title="The date-range read from ksys22 failed, so this is the last figure seen before the clear and may be slightly low."
+                            >
+                              last seen
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{day(p.cleared_on)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {money(Number(p.net_revenue))}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {Number(p.company_share_pct)}%
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {money(Number(p.company_revenue))}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell colSpan={6} className="font-medium">
+                        Total
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{p.location!.state}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {day(p.period_start)} to {day(p.period_end)}
-                        {p.source === "last_seen" && (
-                          <Badge
-                            variant="outline"
-                            className="ml-2 border-orange-300 text-orange-700"
-                            title="The date-range read from ksys22 failed, so this is the last figure seen before the clear and may be slightly low."
-                          >
-                            last seen
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{day(p.cleared_on)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {money(Number(p.net_revenue))}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {Number(p.company_share_pct)}%
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {money(Number(p.company_revenue))}
+                      <TableCell className="text-right font-bold tabular-nums">
+                        {money(clearedTotal)}
                       </TableCell>
                     </TableRow>
-                  ))
+                  </>
                 )}
               </TableBody>
             </Table>
@@ -288,58 +588,53 @@ export function EstimatesClient() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Location</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Period started</TableHead>
-                  <TableHead className="text-right">Net so far</TableHead>
-                  <TableHead className="text-right">Estimate so far</TableHead>
-                  <TableHead>Last checked</TableHead>
+                  <SortHead label="Location" column="location" sort={openSort} />
+                  <SortHead label="State" column="state" sort={openSort} />
+                  <SortHead label="Period started" column="started" sort={openSort} />
+                  <SortHead label="Net so far" column="net" sort={openSort} align="right" />
+                  <SortHead label="Estimate so far" column="estimate" sort={openSort} align="right" />
+                  <SortHead label="Last checked" column="checked" sort={openSort} />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {notCleared.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="py-8 text-center text-muted-foreground"
-                    >
-                      Every location has cleared since the last sheet.
-                    </TableCell>
-                  </TableRow>
+                  <EmptyRow span={6} text="No locations match." />
                 ) : (
-                  notCleared.map(({ location, record }) => (
-                    <TableRow key={location.id}>
-                      <TableCell className="font-medium">
-                        {location.location_number} - {location.name}
+                  <>
+                    {notCleared.map(({ location, record }) => (
+                      <TableRow key={location.id}>
+                        <TableCell>
+                          <LocationLinks location={location} />
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{location.state}</Badge>
+                        </TableCell>
+                        <TableCell>{day(record?.period_start)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {money(record ? Number(record.net_revenue) : null)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {money(record ? Number(record.company_revenue) : null)}
+                        </TableCell>
+                        <TableCell>
+                          {record ? day(record.fetched_at) : "Never"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell colSpan={4} className="font-medium">
+                        Total
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{location.state}</Badge>
+                      <TableCell className="text-right font-bold tabular-nums">
+                        {money(runningTotal)}
                       </TableCell>
-                      <TableCell>{day(record?.period_start)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {money(record ? Number(record.net_revenue) : null)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {money(record ? Number(record.company_revenue) : null)}
-                      </TableCell>
-                      <TableCell>
-                        {record ? day(record.fetched_at) : "Never"}
-                      </TableCell>
+                      <TableCell />
                     </TableRow>
-                  ))
+                  </>
                 )}
               </TableBody>
             </Table>
           </div>
-          {view.noLink.filter((l) => inState(l.state)).length > 0 && (
-            <p className="mt-3 text-sm text-muted-foreground">
-              No ksys22 link, so no estimate:{" "}
-              {view.noLink
-                .filter((l) => inState(l.state))
-                .map((l) => `${l.location_number} - ${l.name}`)
-                .join("; ")}
-            </p>
-          )}
         </CardContent>
       </Card>
 
@@ -361,27 +656,22 @@ export function EstimatesClient() {
                 <TableHeader>
                   <TableRow>
                     <TableHead />
-                    <TableHead>Sheet</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Sheet date</TableHead>
-                    <TableHead className="text-right">Estimate</TableHead>
-                    <TableHead className="text-right">Actual</TableHead>
-                    <TableHead className="text-right">Difference</TableHead>
-                    <TableHead className="text-right">Cleared</TableHead>
-                    <TableHead className="text-right">Not cleared</TableHead>
+                    <SortHead label="Sheet" column="sheet" sort={sheetSort} />
+                    <SortHead label="State" column="state" sort={sheetSort} />
+                    <SortHead label="Sheet date" column="date" sort={sheetSort} />
+                    <SortHead label="Estimate" column="estimate" sort={sheetSort} align="right" />
+                    <SortHead label="Actual" column="actual" sort={sheetSort} align="right" />
+                    <SortHead label="Difference" column="diff" sort={sheetSort} align="right" />
+                    <SortHead label="Cleared" column="cleared" sort={sheetSort} align="right" />
+                    <SortHead label="Not cleared" column="open" sort={sheetSort} align="right" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {settlements.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={9}
-                        className="py-8 text-center text-muted-foreground"
-                      >
-                        No settlement sheets yet. Save one in the ledger to
-                        take the first snapshot.
-                      </TableCell>
-                    </TableRow>
+                    <EmptyRow
+                      span={9}
+                      text="No settlement sheets yet. Save one in the ledger to take the first snapshot."
+                    />
                   ) : (
                     settlements.map((s) => (
                       <SettlementRows
@@ -391,6 +681,7 @@ export function EstimatesClient() {
                         onToggle={() =>
                           setExpanded(expanded === s.id ? null : s.id)
                         }
+                        locByNumber={view.locByNumber}
                       />
                     ))
                   )}
@@ -404,19 +695,42 @@ export function EstimatesClient() {
   );
 }
 
+function EmptyRow({ span, text }: { span: number; text: string }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={span} className="py-8 text-center text-muted-foreground">
+        {text}
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function SettlementRows({
   row,
   open,
   onToggle,
+  locByNumber,
 }: {
   row: SettlementEstimate;
   open: boolean;
   onToggle: () => void;
+  locByNumber: Map<string, EstimateLocation>;
 }) {
   const estimate = Number(row.estimate);
   const actual = row.actual === null ? null : Number(row.actual);
   const diff = actual === null ? null : actual - estimate;
   const details = row.details ?? { cleared: [], not_cleared: [], no_link: [] };
+
+  const name = (number: string, fallback: string) => {
+    const location = locByNumber.get(number);
+    return location ? (
+      <LocationLinks location={location} />
+    ) : (
+      <span className="font-medium">
+        {number} - {fallback}
+      </span>
+    );
+  };
 
   return (
     <Fragment>
@@ -429,7 +743,14 @@ function SettlementRows({
           )}
         </TableCell>
         <TableCell className="font-medium">
-          {row.statement_period ?? row.statement_id}
+          <Link
+            href="/ledger#statements"
+            className="hover:underline"
+            onClick={(e) => e.stopPropagation()}
+            title="Open the Settlement Ledger"
+          >
+            {row.statement_period ?? row.statement_id}
+          </Link>
         </TableCell>
         <TableCell>
           <Badge variant="outline">{row.state}</Badge>
@@ -463,8 +784,8 @@ function SettlementRows({
                   <ul className="space-y-1 text-sm">
                     {details.cleared.map((c, i) => (
                       <li key={i} className="flex justify-between gap-3">
-                        <span>
-                          {c.location_number} - {c.name}{" "}
+                        <span className="whitespace-normal">
+                          {name(c.location_number, c.name)}{" "}
                           <span className="text-muted-foreground">
                             ({day(c.period_start)} to {day(c.period_end)},{" "}
                             {money(c.net_revenue)} at {c.share_pct}%)
@@ -486,8 +807,8 @@ function SettlementRows({
                   <ul className="space-y-1 text-sm">
                     {details.not_cleared.map((c, i) => (
                       <li key={i} className="flex justify-between gap-3">
-                        <span>
-                          {c.location_number} - {c.name}{" "}
+                        <span className="whitespace-normal">
+                          {name(c.location_number, c.name)}{" "}
                           <span className="text-muted-foreground">
                             (since {day(c.period_start)})
                           </span>

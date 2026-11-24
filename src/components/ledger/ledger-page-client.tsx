@@ -191,24 +191,19 @@ function buildCapabilities() {
       const list = locations ?? [];
       let done = 0;
       onProgress(done, list.length);
-      // A few at a time: each call signs in to ksys22 on its own.
-      const queue = [...list];
-      const worker = async () => {
-        while (queue.length) {
-          const loc = queue.shift()!;
-          try {
-            await fetch("/api/revenue/fetch", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ location_id: loc.id }),
-            });
-          } catch {
-            // One location failing must not stop the settlement.
-          }
-          onProgress(++done, list.length);
+      // One at a time: ksys22 returns empty reports to overlapping sign-ins.
+      for (const loc of list) {
+        try {
+          await fetch("/api/revenue/fetch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ location_id: loc.id }),
+          });
+        } catch {
+          // One location failing must not stop the settlement.
         }
-      };
-      await Promise.all([worker(), worker(), worker()]);
+        onProgress(++done, list.length);
+      }
     },
     async settle(payload: Doc) {
       const res = await fetch("/api/estimates/settle", {
