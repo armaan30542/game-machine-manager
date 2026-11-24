@@ -400,11 +400,13 @@ export async function fetchRevenuePage(
  *
  * @param startDate - "YYYY-MM-DD"
  * @param endDate   - "YYYY-MM-DD"
+ * @param options.withDevices - pass false to skip the device-list request
  */
 export async function fetchRevenueByDate(
   revenueUrl: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  options: { withDevices?: boolean } = {}
 ): Promise<RevenueFetchResult> {
   const { origin, basePath } = resolveBase(revenueUrl);
   const client = new Client(origin, { keepAliveTimeout: 30000 });
@@ -501,7 +503,11 @@ export async function fetchRevenueByDate(
     if (revenueHtml.includes("klogin.css")) {
       throw new Error("Login failed - got login page instead of report data");
     }
-    const deviceHtml = await fetchDeviceHtml(client, basePath, origin, sessionId);
+    // The device list only names the games; totals-only callers skip it.
+    const deviceHtml =
+      options.withDevices === false
+        ? ""
+        : await fetchDeviceHtml(client, basePath, origin, sessionId);
     return { revenueHtml, deviceHtml };
   } finally {
     await client.close();

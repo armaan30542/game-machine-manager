@@ -28,6 +28,7 @@ import {
   Gamepad2,
   LogOut,
   Calculator,
+  TrendingUp,
   CalendarDays,
   BookOpen,
 } from "lucide-react";
@@ -49,6 +50,7 @@ const navItems: {
   { title: "Inventory", href: "/inventory", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign, exact: true },
   { title: "Revenue by Date", href: "/revenue/by-date", icon: CalendarRange },
+  { title: "Weekly Revenue", href: "/weekly", icon: TrendingUp },
   { title: "Estimates", href: "/estimates", icon: Calculator },
   { title: "Changes", href: "/changes", icon: CalendarClock },
   { title: "Monthly Changes", href: "/monthly-changes", icon: CalendarDays },

@@ -17,6 +17,7 @@ export type AuditAction =
   | "revenue_by_date_run"
   | "revenue_fetch_failed"
   | "daily_job_run"
+  | "weekly_job_run"
   | "settlement_estimated";
 
 export interface Profile {
@@ -208,4 +209,18 @@ export interface MonthlySnapshotRow {
   month: string;
   taken_at: string;
   is_baseline: boolean;
+}
+
+/** One location's revenue for one calendar week (Monday to Sunday). */
+export interface WeeklyRevenueRow {
+  week_start: string;
+  location_id: string;
+  state: string;
+  cash_in: number;
+  cash_out: number;
+  net_revenue: number;
+  fee_amount: number;
+  company_share_pct: number;
+  company_revenue: number;
+  fetched_at: string;
 }
