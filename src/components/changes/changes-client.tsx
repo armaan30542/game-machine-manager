@@ -55,7 +55,7 @@ const MACHINE_ACTION_META: Record<string, { label: string; color: string }> = {
   },
 };
 
-type StateFilter = "all" | "VA" | "TX";
+type StateFilter = "all" | "VA" | "TX" | "FL";
 
 function StateSelect({
   value,
@@ -73,6 +73,7 @@ function StateSelect({
         <SelectItem value="all">All States</SelectItem>
         <SelectItem value="VA">Virginia</SelectItem>
         <SelectItem value="TX">Texas</SelectItem>
+        <SelectItem value="FL">Florida</SelectItem>
       </SelectContent>
     </Select>
   );

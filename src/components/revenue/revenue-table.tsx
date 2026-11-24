@@ -257,6 +257,7 @@ export function RevenueTable({
               <SelectItem value="all">All States</SelectItem>
               <SelectItem value="VA">Virginia</SelectItem>
               <SelectItem value="TX">Texas</SelectItem>
+              <SelectItem value="FL">Florida</SelectItem>
             </SelectContent>
           </Select>
         </div>

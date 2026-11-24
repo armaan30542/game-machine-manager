@@ -84,5 +84,5 @@ export const CABINET_TYPES = [
 
 export type CabinetTypeName = (typeof CABINET_TYPES)[number];
 
-export const US_STATES = ["VA", "TX"] as const;
+export const US_STATES = ["VA", "TX", "FL"] as const;
 export type USState = (typeof US_STATES)[number];
