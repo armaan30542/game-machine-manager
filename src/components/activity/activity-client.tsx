@@ -111,6 +111,11 @@ const ACTION_META: Record<
     color: "bg-red-100 text-red-800",
     icon: DollarSign,
   },
+  weekly_job_run: {
+    label: "Weekly Job",
+    color: "bg-slate-100 text-slate-800",
+    icon: CalendarRange,
+  },
   daily_job_run: {
     label: "Daily Job",
     color: "bg-slate-100 text-slate-800",
@@ -158,6 +163,7 @@ const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
       "revenue_by_date_run",
       "revenue_fetch_failed",
       "daily_job_run",
+      "weekly_job_run",
       "settlement_estimated",
     ],
   },

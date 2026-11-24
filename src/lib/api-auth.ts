@@ -6,6 +6,25 @@ export type AdminAuth =
   | { ok: true; user: User; supabase: SupabaseClient }
   | { ok: false; response: NextResponse };
 
+export type UserAuth =
+  | { ok: true; user: User; supabase: SupabaseClient }
+  | { ok: false; response: NextResponse };
+
+/** Require any signed-in user for an API route. */
+export async function requireUser(): Promise<UserAuth> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+  }
+  return { ok: true, user, supabase };
+}
+
 /** Require a signed-in admin for an API route. */
 export async function requireAdmin(): Promise<AdminAuth> {
   const supabase = await createClient();

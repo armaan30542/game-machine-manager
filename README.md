@@ -45,6 +45,30 @@ Admins can run the same job from the Estimates page ("Check for clears now").
 "Fetch All Revenue" and the per-location fetch use the same code path, so a clear is
 recorded whichever way the refresh happens.
 
+ksys22 must be read **one location at a time**. It ties a session to the caller's
+address, and overlapping sign-ins make it return empty reports.
+
+### Weekly revenue and the Monday notification
+
+Run `supabase/migrations/010_weekly_revenue_push.sql` once in the Supabase SQL editor.
+
+`vercel.json` schedules `/api/cron/weekly` at 12:00 UTC every Monday (7 AM Eastern in
+winter, 8 AM in summer). Each run:
+
+1. reads last week's revenue (Monday to Sunday) for every active location from ksys22
+   "Period by Date", and the week before it if it is not stored yet;
+2. sends one push notification with net revenue and the company share per state,
+   compared with the week before. It is sent once per week.
+
+Each week is read by date, so a clear in the middle of a week does not affect it. A
+machine whose meter was reset inside the week shows a negative amount on ksys22; it is
+counted from zero.
+
+People turn the notification on per device on the Weekly Revenue page (`/weekly`). On
+an iPhone or iPad the site has to be added to the home screen first. The push signing
+keys are created by the app on first use and kept in `app_config`, so there is nothing
+to configure; `VAPID_SUBJECT` (a `mailto:` address) is optional.
+
 ---
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
