@@ -52,8 +52,11 @@ address, and overlapping sign-ins make it return empty reports.
 
 Run `supabase/migrations/010_weekly_revenue_push.sql` once in the Supabase SQL editor.
 
-`vercel.json` schedules `/api/cron/weekly` at 12:00 UTC every Monday (7 AM Eastern in
-winter, 8 AM in summer). Each run:
+The notification goes out on Mondays at 11:30 AM Eastern. Vercel schedules in UTC and
+does not follow daylight saving, so `vercel.json` schedules `/api/cron/weekly` twice,
+at 15:30 UTC (11:30 in summer) and 16:30 UTC (11:30 in winter); the route only does
+the work when it is the 11 o'clock hour Eastern and ignores the other firing. On the
+Hobby plan Vercel may start a job any time within its scheduled hour. Each run:
 
 1. reads last week's revenue (Monday to Sunday) for every active location from ksys22
    "Period by Date", and the week before it if it is not stored yet;

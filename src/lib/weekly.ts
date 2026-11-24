@@ -22,6 +22,19 @@ export function businessToday(now: Date = new Date()): string {
   }).format(now);
 }
 
+/** The hour of day (0-23) right now in the business time zone. */
+export function businessHour(now: Date = new Date()): number {
+  const hour = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    hour: "numeric",
+    hourCycle: "h23",
+  }).format(now);
+  return Number(hour);
+}
+
+/** The hour (Eastern) the Monday notification goes out in. */
+export const WEEKLY_SEND_HOUR = 11;
+
 /** Monday of the week containing the given date. */
 export function mondayOf(iso: string): string {
   const day = new Date(iso + "T00:00:00Z").getUTCDay(); // 0 = Sunday

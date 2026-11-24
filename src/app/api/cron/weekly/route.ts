@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
 import { sendPush } from "@/lib/push";
-import { fetchWeek, lastTwoWeeks, stateTotals, weeklyMessage } from "@/lib/weekly";
+import {
+  WEEKLY_SEND_HOUR,
+  businessHour,
+  fetchWeek,
+  lastTwoWeeks,
+  stateTotals,
+  weeklyMessage,
+} from "@/lib/weekly";
 
 export const maxDuration = 300;
 
@@ -101,6 +108,16 @@ export async function GET(request: NextRequest) {
   }
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Vercel schedules in UTC and knows nothing of daylight saving, so the
+  // job is scheduled twice (15:30 and 16:30 UTC). Only the firing that
+  // lands in the 11 o'clock hour Eastern does the work.
+  const hour = businessHour();
+  if (hour !== WEEKLY_SEND_HOUR) {
+    return NextResponse.json({
+      skipped: `It is ${hour}:00 Eastern; the weekly job runs in the ${WEEKLY_SEND_HOUR}:00 hour.`,
+    });
   }
 
   try {
