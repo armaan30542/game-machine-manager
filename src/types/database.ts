@@ -15,6 +15,7 @@ export type AuditAction =
   | "dispenser_removed"
   | "revenue_fetched"
   | "revenue_by_date_run"
+  | "revenue_fetch_failed"
   | "daily_job_run"
   | "settlement_estimated";
 

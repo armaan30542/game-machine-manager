@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
-import { refreshLocationRevenue } from "@/lib/clears";
+import { refreshLocationRevenue, logFetchFailure } from "@/lib/clears";
 
 export const maxDuration = 60;
 
@@ -70,6 +70,7 @@ export async function POST() {
       // Small delay to avoid rate limiting
       await new Promise((resolve) => setTimeout(resolve, 300));
     } catch (err) {
+      await logFetchFailure(serviceClient, loc.id, err, user.id);
       results.push({
         location_number: loc.location_number,
         status: "error",

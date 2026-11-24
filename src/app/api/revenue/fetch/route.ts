@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
-import { refreshLocationRevenue } from "@/lib/clears";
+import { refreshLocationRevenue, logFetchFailure } from "@/lib/clears";
 
 export const maxDuration = 60;
 
@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("Revenue fetch error:", err);
+    await logFetchFailure(serviceClient, location.id, err, user.id);
     return NextResponse.json(
       { error: "Failed to fetch revenue data" },
       { status: 500 }

@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
-import { refreshLocationRevenue } from "@/lib/clears";
+import { refreshLocationRevenue, logFetchFailure } from "@/lib/clears";
 import { ensureMonthlySnapshot } from "@/lib/snapshots";
 
 export const maxDuration = 300;
 
 /** Stop starting new locations after this long so the run ends cleanly. */
 const TIME_BUDGET_MS = 240_000;
-const CONCURRENCY = 3;
+/** Pause between locations, as the manual fetch does, to stay polite. */
+const PAUSE_MS = 300;
 
 interface JobLocation {
   id: string;
@@ -24,7 +25,7 @@ interface JobLocation {
  *  2. refreshes every active location's ksys22 revenue, which records a
  *     cleared period for any location that was cleared since the last run.
  *
- * Locations are processed oldest-fetched first, a few at a time, so if the
+ * Locations are processed oldest-fetched first, one at a time, so if the
  * time budget runs out the remainder is picked up first on the next run.
  */
 async function runDailyJob(performedBy: string | null) {
@@ -63,21 +64,20 @@ async function runDailyJob(performedBy: string | null) {
   const cleared: string[] = [];
   const errors: { location_number: string; error: string }[] = [];
 
-  async function worker() {
-    while (queue.length > 0) {
-      if (Date.now() - started > TIME_BUDGET_MS) return;
-      const loc = queue.shift()!;
-      try {
-        const result = await refreshLocationRevenue(service, loc);
-        refreshed++;
-        if (result.cleared) cleared.push(loc.location_number);
-      } catch (err) {
-        errors.push({ location_number: loc.location_number, error: String(err) });
-      }
-      await new Promise((resolve) => setTimeout(resolve, 300));
+  // Strictly one location at a time: ksys22 ties a session to the caller's
+  // address, and overlapping sign-ins make it return empty reports.
+  while (queue.length > 0 && Date.now() - started < TIME_BUDGET_MS) {
+    const loc = queue.shift()!;
+    try {
+      const result = await refreshLocationRevenue(service, loc);
+      refreshed++;
+      if (result.cleared) cleared.push(loc.location_number);
+    } catch (err) {
+      errors.push({ location_number: loc.location_number, error: String(err) });
+      await logFetchFailure(service, loc.id, err, performedBy);
     }
+    await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
   }
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
   skipped = queue.length;
 
   const summary = {

@@ -37,6 +37,19 @@ export function dayBefore(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * True when a ksys22 report page actually carries rows.
+ *
+ * ksys22 sometimes answers with the report shell (title, column headers,
+ * Totals label) but an empty table, most reliably when it is asked for more
+ * than one location at a time. Such a page parses as zero revenue with a
+ * default period start, so it must be treated as a failed read, never saved.
+ * Every real row carries a start date and a last-read date.
+ */
+export function hasReportRows(html: string, parsed: RevenueData): boolean {
+  return parsed.machine_lines.length > 0 || /\d{2}\/\d{2}\/\d{2,4}/.test(html);
+}
+
 export function companyShare(
   netRevenue: number,
   fees: number,
@@ -57,6 +70,9 @@ export function companyShare(
  *
  * Every revenue refresh (single fetch, fetch-all, daily job) goes through
  * here so a clear is never overwritten without being recorded.
+ *
+ * Call this for ONE location at a time. ksys22 ties a session to the
+ * caller's address, and overlapping sign-ins make it return empty reports.
  */
 export async function refreshLocationRevenue(
   service: SupabaseClient,
@@ -64,6 +80,9 @@ export async function refreshLocationRevenue(
 ): Promise<RefreshResult> {
   const { revenueHtml, deviceHtml } = await fetchRevenuePage(loc.revenue_url);
   const parsed = parseRevenueResponse(revenueHtml);
+  if (!hasReportRows(revenueHtml, parsed)) {
+    throw new Error("ksys22 returned an empty report; nothing was saved");
+  }
   const machineLines = applyDeviceNames(
     parsed.machine_lines,
     parseDeviceList(deviceHtml)
@@ -77,13 +96,21 @@ export async function refreshLocationRevenue(
     sharePercent
   );
 
-  const { data: prev } = await service
+  const { data: prevRow } = await service
     .from("revenue_records")
-    .select("period_start, period_end, cash_in, cash_out, net_revenue")
+    .select("period_start, period_end, cash_in, cash_out, net_revenue, raw_data")
     .eq("location_id", loc.id)
     .order("fetched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  // A stored row that came from an empty report says nothing about the
+  // period, so it cannot be the baseline for detecting a clear.
+  const prev =
+    prevRow &&
+    (typeof prevRow.raw_data !== "string" ||
+      /\d{2}\/\d{2}\/\d{2,4}/.test(prevRow.raw_data))
+      ? prevRow
+      : null;
 
   let cleared: ClearedPeriodResult | null = null;
   const today = new Date().toISOString().slice(0, 10);
@@ -109,9 +136,13 @@ export async function refreshLocationRevenue(
         periodEnd
       );
       const closed = parseRevenueResponse(byDate.revenueHtml);
-      // An all-zero result when the open period had money in it means the
-      // date-range read did not work; keep the last figures seen instead.
-      if (closed.cash_in > 0 || Number(prev.cash_in) === 0) {
+      // An empty report, or an all-zero result when the open period had
+      // money in it, means the date-range read did not work; keep the last
+      // figures seen instead.
+      if (
+        hasReportRows(byDate.revenueHtml, closed) &&
+        (closed.cash_in > 0 || Number(prev.cash_in) === 0)
+      ) {
         cashIn = closed.cash_in;
         cashOut = closed.cash_out;
         net = closed.net_revenue;
@@ -204,4 +235,28 @@ export async function refreshLocationRevenue(
   }
 
   return { parsed, companyRevenue, cleared };
+}
+
+/**
+ * Record a failed ksys22 read for a location in the audit log. The Estimates
+ * page compares the newest failure with the newest successful read to list
+ * locations whose link is broken. Never throws: logging must not mask the
+ * original failure.
+ */
+export async function logFetchFailure(
+  service: SupabaseClient,
+  locationId: string,
+  error: unknown,
+  performedBy: string | null
+): Promise<void> {
+  try {
+    await service.from("audit_log").insert({
+      action: "revenue_fetch_failed",
+      performed_by: performedBy,
+      location_id: locationId,
+      details: { error: String(error).replace(/^Error:\s*/, "").slice(0, 300) },
+    });
+  } catch (err) {
+    console.error("Could not log fetch failure:", err);
+  }
 }

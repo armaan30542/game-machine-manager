@@ -26,7 +26,7 @@ const sname = s => STATE_NAMES[s] || s;
 const CATS = { pay: "Manek's pay", papa: 'Papa (contractor)', commission: 'Commissions', cash: 'Cash expenses', card: 'Credit card', truck: 'Truck rental', decals: 'Decals and licences', systems: 'Systems and software', equipment: 'Equipment', tech: 'Technicians and installs', signs: 'Signs', accounting: 'Accounting', tax: 'IRS and taxes', family: 'Aunty', vehicle: 'Car payment', funded: 'Funded purchases', other: 'Other' };
 const KINDS = { expense: 'Expense', pay: "Manek's pay", repay: 'Payback to SP and SS', tax: 'Tax' };
 const DOC_TYPES = { receipt: 'Receipt', redemption_log: 'Redemption log', tax: 'Tax filing', payout_breakdown: 'Payout breakdown', other: 'Other' };
-const PARTNERS = { SP: 'SP (you)', SS: 'SS', SM: 'Manek' };
+const PARTNERS = { SP: 'SP', SS: 'SS', SM: 'Manek' };
 const VIEWS = [['overview', 'Overview'], ['statements', 'Statements'], ['add', 'Add image'], ['partners', 'Partners'], ['expenses', 'Expenses'], ['states', 'States'], ['funded', 'Funded items'], ['documents', 'Documents'], ['checks', 'Checks']];
 
 const S = { db: null, sample: null, assets: null, downloads: null, canWrite: true, imgLimits: null, ready: false, noStore: false, slow: false, dead: null,
@@ -184,7 +184,6 @@ function vOverview() {
       ${kp('Net after expenses', money(t.net1), `${pct(t.net1, t.coll)} of collections`)}
       ${kp('Paybacks, tax, prepaid', money(t.below), `${money(t.repay)} of it paid back to SP and SS`)}
       ${kp('Profit split three ways', money(t.net2), `${money(t.each)} per partner`)}
-      ${kp('Your total (SP)', money(t.due.SP), `${money(t.each)} share + ${money(t.back.SP + t.front.SP)} paid back`, 'me')}
     </div>
     ${warn ? `<div class="banner">${warn} item${warn > 1 ? 's' : ''} on the sheets ${warn > 1 ? "don't" : "doesn't"} add up. <a href="#checks">Open Checks</a></div>` : ''}
   </section>
@@ -218,8 +217,8 @@ function statementDetail(r) {
   const who = (p, rows, total) => `<div class="card"><h3>${PARTNERS[p]}</h3><div class="big">${money(total)}</div><dl>${rows.filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${money(x[1])}</dd>`).join('')}</dl>${p !== 'SM' && has(st[p]) ? `<p>${Math.abs(num(st[p]) - total) < 1 ? '<span class="pill ok">Matches sheet</span>' : `<span class="pill warn">Sheet says ${money(st[p])}</span>`}</p>` : ''}</div>`;
   return `<section>
     <div class="hd"><div><button class="link" data-act="back">← All statements</button><h2 style="margin-top:6px">${esc(reportTitle(r))}</h2><p>${r.sentDate ? 'Sent ' + esc(dlabel(r.sentDate)) : ''}${r.source ? ' · ' + esc(r.source) : ''}</p></div>
-    ${S.canWrite ? `<div class="row">${S.confirm === r.id ? `<span>Delete this statement?</span><button class="danger" data-act="del-yes" data-id="${esc(r.id)}">Yes, delete</button><button data-act="del-no">Keep it</button>` : `<button data-act="received" data-id="${esc(r.id)}">${r.received ? 'Mark payout not received' : 'Mark my payout received'}</button><button data-act="edit" data-id="${esc(r.id)}">Edit</button><button class="danger" data-act="del" data-id="${esc(r.id)}">Delete</button>`}</div>` : ''}</div>
-    ${r.received ? `<div class="banner info">You marked this payout as received.</div>` : ''}
+    ${S.canWrite ? `<div class="row">${S.confirm === r.id ? `<span>Delete this statement?</span><button class="danger" data-act="del-yes" data-id="${esc(r.id)}">Yes, delete</button><button data-act="del-no">Keep it</button>` : `<button data-act="received" data-id="${esc(r.id)}">${r.received ? 'Mark payouts not received' : 'Mark payouts received'}</button><button data-act="edit" data-id="${esc(r.id)}">Edit</button><button class="danger" data-act="del" data-id="${esc(r.id)}">Delete</button>`}</div>` : ''}</div>
+    ${r.received ? `<div class="banner info">Payouts for this statement are marked as received.</div>` : ''}
     <div class="cols">
       <div class="scroll"><table><thead><tr><th>Line</th><th class="t">Category</th><th class="t">Paid back to</th><th>Amount</th></tr></thead><tbody>
         <tr class="grp"><td colspan="4">Collections</td></tr>
@@ -304,13 +303,13 @@ function vPartners() {
   const t = totals(rs), has = v => v !== null && v !== undefined && v !== '';
   const investor = p => { let stSum = 0, gapSum = 0, any = false;
     const rows = rs.map(r => { const c = calc(r), st = (r.stated || {})[p]; let stc = '<td class="dim">not shown</td><td></td>'; if (has(st)) { any = true; const g = c.due[p] - num(st); stSum += num(st); gapSum += g; stc = `<td>${money(st)}</td><td class="${Math.abs(g) >= 1 ? 'neg' : 'dim'}">${Math.abs(g) < 1 ? '–' : money(g)}</td>`; }
-      return `<tr class="click" data-act="open" data-id="${esc(r.id)}" tabindex="0"><td>${esc(reportTitle(r))}</td><td>${money(c.each)}</td><td>${money(c.back[p])}</td><td>${money(c.front[p])}</td><td>${money(c.due[p])}</td>${stc}${p === 'SP' ? `<td class="t">${r.received ? '<span class="pill ok">Received</span>' : '<span class="pill muted">Not marked</span>'}</td>` : ''}</tr>`; }).join('');
+      return `<tr class="click" data-act="open" data-id="${esc(r.id)}" tabindex="0"><td>${esc(reportTitle(r))}</td><td>${money(c.each)}</td><td>${money(c.back[p])}</td><td>${money(c.front[p])}</td><td>${money(c.due[p])}</td>${stc}<td class="t">${r.received ? '<span class="pill ok">Received</span>' : '<span class="pill muted">Not marked</span>'}</td></tr>`; }).join('');
     return `<section><div class="hd"><h2>${PARTNERS[p]}</h2><p>Share of profit plus money paid back</p></div>
-    <div class="scroll"><table><thead><tr><th>Statement</th><th>Profit share</th><th>Paybacks</th><th>Out-of-pocket repaid</th><th>Total due</th><th>Sheet shows</th><th>Gap</th>${p === 'SP' ? '<th class="t">Payout</th>' : ''}</tr></thead><tbody>${rows}
-    <tr class="tot"><td>Total</td><td>${money(t.each)}</td><td>${money(t.back[p])}</td><td>${money(t.front[p])}</td><td>${money(t.due[p])}</td><td>${any ? money(stSum) : ''}</td><td class="${Math.abs(gapSum) >= 1 ? 'neg' : ''}">${any ? money(gapSum) : ''}</td>${p === 'SP' ? '<td></td>' : ''}</tr></tbody></table></div></section>`; };
+    <div class="scroll"><table><thead><tr><th>Statement</th><th>Profit share</th><th>Paybacks</th><th>Out-of-pocket repaid</th><th>Total due</th><th>Sheet shows</th><th>Gap</th><th class="t">Payout</th></tr></thead><tbody>${rows}
+    <tr class="tot"><td>Total</td><td>${money(t.each)}</td><td>${money(t.back[p])}</td><td>${money(t.front[p])}</td><td>${money(t.due[p])}</td><td>${any ? money(stSum) : ''}</td><td class="${Math.abs(gapSum) >= 1 ? 'neg' : ''}">${any ? money(gapSum) : ''}</td><td></td></tr></tbody></table></div></section>`; };
   const papa = allLines(rs).filter(x => x.l.category === 'papa');
   return `<section><div class="kpis">
-      <div class="kpi me"><span class="l">SP total due</span><span class="v">${money(t.due.SP)}</span><span class="d">${money(t.each)} share + ${money(t.back.SP + t.front.SP)} paid back</span></div>
+      <div class="kpi"><span class="l">SP total due</span><span class="v">${money(t.due.SP)}</span><span class="d">${money(t.each)} share + ${money(t.back.SP + t.front.SP)} paid back</span></div>
       <div class="kpi"><span class="l">SS total due</span><span class="v">${money(t.due.SS)}</span><span class="d">${money(t.each)} share + ${money(t.back.SS + t.front.SS)} paid back</span></div>
       <div class="kpi"><span class="l">Manek total</span><span class="v">${money(t.due.SM)}</span><span class="d">${money(t.each)} share + ${money(t.pay)} pay</span></div>
       <div class="kpi"><span class="l">Papa (contractor)</span><span class="v">${money(sum(papa.map(x => x.l.amount)))}</span><span class="d">${papa.length} payments</span></div>
@@ -428,7 +427,7 @@ function draftSummary() {
     <div class="kpi"><span class="l">Net after expenses</span><span class="v">${money(c.net1)}</span></div>
     <div class="kpi"><span class="l">Net to split</span><span class="v">${money(c.net2)}</span></div>
     <div class="kpi"><span class="l">Each</span><span class="v">${money(c.each, true)}</span></div>
-    <div class="kpi me"><span class="l">SP total</span><span class="v">${money(c.due.SP)}</span></div>
+    <div class="kpi"><span class="l">SP total</span><span class="v">${money(c.due.SP)}</span></div>
     <div class="kpi"><span class="l">SS total</span><span class="v">${money(c.due.SS)}</span></div>
   </div>${ck.length ? `<ul class="list" style="margin-top:10px">${ck.map(x => `<li><span class="pill ${x.level === 'warn' ? 'warn' : 'muted'}">${x.level === 'warn' ? 'Review' : 'Note'}</span><div>${esc(x.text)}</div></li>`).join('')}</ul>` : `<p class="note" style="margin-top:8px">The lines agree with the totals written on the sheet.</p>`}`;
 }
@@ -513,7 +512,7 @@ RULES
 - stated: totals as written on the sheet. net1 = first net after operating deductions, net2 = final net that is split, each = one partner's share, SP and SS = each investor's final total if the sheet shows one. Use null for anything not written.
 - Check the arithmetic. If a handwritten digit is ambiguous, choose the reading that makes the sheet's own subtotals work and say so in "warnings". Add a warning for every written total that does not equal its parts, and for anything you could not read.`;
 }
-const READ_ERRORS = { not_granted: "Claude wasn't given permission to read images on this page, so the figures need to be typed in.", rate_limited: "Claude is busy or you've reached a usage limit. Try again in a little while.", image_rejected: "That file can't be read. Use a JPEG or PNG photo under 20 MB.", images_unavailable: "Image reading isn't available in this view.", refused: "Claude declined to read this image.", invalid_json: "The image was read, but the answer came back in a form the ledger couldn't use. Try again.", session_expired: 'Your session has expired. Sign in again and retry.', sampling_disabled: "Claude isn't available for this account here." };
+const READ_ERRORS = { not_configured: "Image reading isn't set up on this copy of the app: the Anthropic API key is missing or was rejected. Use the live site, or check ANTHROPIC_API_KEY in Vercel.", not_granted: "Claude wasn't given permission to read images on this page, so the figures need to be typed in.", rate_limited: "Claude is busy or you've reached a usage limit. Try again in a little while.", image_rejected: "That file can't be read. Use a JPEG or PNG photo under 20 MB.", images_unavailable: "Image reading isn't available in this view.", refused: "Claude declined to read this image.", invalid_json: "The image was read, but the answer came back in a form the ledger couldn't use. Try again.", session_expired: 'Your session has expired. Sign in again and retry.', sampling_disabled: "Claude isn't available for this account here." };
 async function readImage() {
   if (!S.pending || !S.sample) return;
   S.reading = true; S.readErr = ''; S.ctl = new AbortController(); render();

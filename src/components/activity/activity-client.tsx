@@ -106,6 +106,11 @@ const ACTION_META: Record<
     color: "bg-purple-100 text-purple-800",
     icon: CalendarRange,
   },
+  revenue_fetch_failed: {
+    label: "Revenue Fetch Failed",
+    color: "bg-red-100 text-red-800",
+    icon: DollarSign,
+  },
   daily_job_run: {
     label: "Daily Job",
     color: "bg-slate-100 text-slate-800",
@@ -151,6 +156,7 @@ const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
     actions: [
       "revenue_fetched",
       "revenue_by_date_run",
+      "revenue_fetch_failed",
       "daily_job_run",
       "settlement_estimated",
     ],
