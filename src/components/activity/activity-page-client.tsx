@@ -12,7 +12,8 @@ export function ActivityPageClient() {
       <div>
         <h1 className="text-2xl font-bold">Activity Log</h1>
         <p className="text-sm text-muted-foreground">
-          Complete audit trail of all actions
+          Inventory changes, location openings and closings, revenue
+          resets and settlement estimates
         </p>
       </div>
 

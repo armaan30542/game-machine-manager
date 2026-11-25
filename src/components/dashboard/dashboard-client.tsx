@@ -44,6 +44,8 @@ function formatAction(action: string): string {
     dispenser_added: "Dispenser added",
     dispenser_removed: "Dispenser removed",
     revenue_fetched: "Revenue data fetched",
+    revenue_cleared: "Revenue reset (period cleared)",
+    settlement_estimated: "Settlement sheet estimate taken",
   };
   return map[action] || action;
 }

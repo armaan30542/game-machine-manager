@@ -342,6 +342,19 @@ export function EstimatesClient() {
     }
   );
 
+  const newestFetch = data.running.reduce(
+    (latest, r) => (r.fetched_at > latest ? r.fetched_at : latest),
+    ""
+  );
+  const lastRefreshed = newestFetch
+    ? new Date(newestFetch).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+
   const clearedTotal = cleared.reduce((t, p) => t + Number(p.company_revenue), 0);
   const runningTotal = notCleared.reduce(
     (t, x) => t + Number(x.record?.company_revenue ?? 0),
@@ -390,6 +403,13 @@ export function EstimatesClient() {
         )}
       </div>
 
+      <p className="text-sm text-muted-foreground">
+        {lastRefreshed
+          ? `Figures last refreshed from ksys22 ${lastRefreshed}. `
+          : "Figures have not been read from ksys22 yet. "}
+        They refresh by themselves every night at about 3 AM Eastern.
+      </p>
+
       {/* Standing by state */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {view.byState.filter((s) => inState(s.state)).map((s) => (
@@ -401,15 +421,22 @@ export function EstimatesClient() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1">
-              <div className="text-2xl font-bold">{money(s.clearedEstimate)}</div>
+              <div className="text-2xl font-bold">
+                {money(s.clearedEstimate + s.runningEstimate)}
+              </div>
               <p className="text-sm text-muted-foreground">
-                expected from {s.clearedLocations} cleared{" "}
+                our share so far, across cleared and open periods
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {money(s.clearedEstimate)} from {s.clearedLocations} cleared{" "}
                 {s.clearedLocations === 1 ? "location" : "locations"} awaiting a
                 sheet
               </p>
               <p className="text-sm text-muted-foreground">
-                {s.notClearedCount} not cleared yet, {money(s.runningEstimate)}{" "}
-                building up
+                {money(s.runningEstimate)} still building up at{" "}
+                {s.notClearedCount}{" "}
+                {s.notClearedCount === 1 ? "location" : "locations"} not cleared
+                yet
               </p>
             </CardContent>
           </Card>

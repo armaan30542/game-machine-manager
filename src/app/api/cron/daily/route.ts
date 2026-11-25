@@ -3,11 +3,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/api-auth";
 import { refreshLocationRevenue, logFetchFailure } from "@/lib/clears";
 import { ensureMonthlySnapshot } from "@/lib/snapshots";
+import { businessHour } from "@/lib/weekly";
 
 export const maxDuration = 300;
 
 /** Stop starting new locations after this long so the run ends cleanly. */
 const TIME_BUDGET_MS = 240_000;
+/** The hour (Eastern) the nightly refresh runs in. */
+const DAILY_RUN_HOUR = 3;
 /** Pause between locations, as the manual fetch does, to stay polite. */
 const PAUSE_MS = 300;
 
@@ -110,6 +113,16 @@ export async function GET(request: NextRequest) {
   }
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Vercel schedules in UTC and knows nothing of daylight saving, so the
+  // job is scheduled twice (07:15 and 08:15 UTC). Only the firing that
+  // lands in the 3 o'clock hour Eastern does the work.
+  const hour = businessHour();
+  if (hour !== DAILY_RUN_HOUR) {
+    return NextResponse.json({
+      skipped: `It is ${hour}:00 Eastern; the nightly job runs in the ${DAILY_RUN_HOUR}:00 hour.`,
+    });
   }
 
   try {
