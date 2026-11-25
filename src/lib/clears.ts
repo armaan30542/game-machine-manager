@@ -176,6 +176,28 @@ export async function refreshLocationRevenue(
       throw new Error(`Saving cleared period failed: ${clearError.message}`);
     }
 
+    // A visible entry for the Activity page ("Revenue Reset"). Best effort.
+    const usd = (n: number) =>
+      (n < 0 ? "-$" : "$") +
+      Math.abs(n).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    const { error: logError } = await service.from("audit_log").insert({
+      action: "revenue_cleared",
+      location_id: loc.id,
+      details: {
+        period_start: periodStart,
+        period_end: periodEnd,
+        cleared_on: parsed.period_start,
+        net_revenue: net,
+        company_revenue: closedCompany,
+        source,
+      },
+      notes: `Period ${periodStart} to ${periodEnd} cleared. Net ${usd(net)}, our share ${usd(closedCompany)}.`,
+    });
+    if (logError) console.error("Clear log insert error:", logError.message);
+
     cleared = {
       period_start: periodStart,
       period_end: periodEnd,

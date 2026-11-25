@@ -16,6 +16,7 @@ export type AuditAction =
   | "revenue_fetched"
   | "revenue_by_date_run"
   | "revenue_fetch_failed"
+  | "revenue_cleared"
   | "daily_job_run"
   | "weekly_job_run"
   | "settlement_estimated";

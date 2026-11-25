@@ -31,6 +31,11 @@ import {
   Package,
 } from "lucide-react";
 import type { AuditLogEntry } from "@/types/database";
+import {
+  INVENTORY_ACTIONS,
+  LOCATION_ACTIONS,
+  MONEY_ACTIONS,
+} from "@/lib/activity-actions";
 
 const ACTION_META: Record<
   string,
@@ -111,6 +116,11 @@ const ACTION_META: Record<
     color: "bg-red-100 text-red-800",
     icon: DollarSign,
   },
+  revenue_cleared: {
+    label: "Revenue Reset",
+    color: "bg-purple-100 text-purple-800",
+    icon: DollarSign,
+  },
   weekly_job_run: {
     label: "Weekly Job",
     color: "bg-slate-100 text-slate-800",
@@ -134,39 +144,9 @@ interface ActivityClientProps {
 
 const PRESET_FILTERS: { label: string; actions: string[] | null }[] = [
   { label: "All", actions: null },
-  {
-    label: "Inventory Changes",
-    actions: [
-      "machine_created",
-      "machine_deleted",
-      "machine_added_to_location",
-      "machine_removed_from_location",
-      "machine_replaced",
-    ],
-  },
-  {
-    label: "Location Activity",
-    actions: [
-      "machine_added_to_location",
-      "machine_removed_from_location",
-      "machine_replaced",
-      "location_created",
-      "location_edited",
-      "location_closed",
-      "location_reopened",
-    ],
-  },
-  {
-    label: "Revenue",
-    actions: [
-      "revenue_fetched",
-      "revenue_by_date_run",
-      "revenue_fetch_failed",
-      "daily_job_run",
-      "weekly_job_run",
-      "settlement_estimated",
-    ],
-  },
+  { label: "Inventory Changes", actions: [...INVENTORY_ACTIONS] },
+  { label: "Location Activity", actions: [...LOCATION_ACTIONS] },
+  { label: "Money", actions: [...MONEY_ACTIONS] },
 ];
 
 export function ActivityClient({ auditLog }: ActivityClientProps) {
@@ -188,6 +168,9 @@ export function ActivityClient({ auditLog }: ActivityClientProps) {
       search === "" ||
       (entry.locations as Record<string, string> | null)
         ?.name?.toLowerCase()
+        .includes(search.toLowerCase()) ||
+      (entry.locations as Record<string, string> | null)
+        ?.location_number?.toLowerCase()
         .includes(search.toLowerCase()) ||
       (entry.machines as Record<string, string> | null)
         ?.machine_type?.toLowerCase()

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import type { AuditLogEntry } from "@/types/database";
+import { BUSINESS_ACTIONS } from "@/lib/activity-actions";
 
 export function useActivity() {
   const supabase = createClient();
@@ -22,8 +23,12 @@ export function useActivity() {
         .select(
           "*, locations:location_id(location_number, name), machines:machine_id(machine_type, serial_number)"
         )
+        // Only inventory, location and money actions. The log also holds
+        // thousands of revenue-fetch and job rows; without this filter the
+        // newest 200 rows were all bookkeeping and the tabs came up empty.
+        .in("action", BUSINESS_ACTIONS)
         .order("created_at", { ascending: false })
-        .limit(200);
+        .limit(500);
 
       if (error) throw error;
       const entries = (data ?? []) as AuditLogEntry[];

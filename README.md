@@ -33,8 +33,9 @@ Three features sit on top of the ksys22 revenue fetch:
 
 ### The daily job
 
-`vercel.json` schedules `/api/cron/daily` at 06:15 UTC (just after midnight US
-Eastern). Each run:
+The nightly job runs at about 3 AM Eastern. `vercel.json` schedules `/api/cron/daily`
+twice, at 07:15 UTC (3:15 in summer) and 08:15 UTC (3:15 in winter); the route only
+does the work when it is the 3 o'clock hour Eastern. Each run:
 
 1. saves the month-end snapshot if the month that just ended has none (the very
    first snapshot is the baseline later months are compared against);

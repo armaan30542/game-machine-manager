@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { BUSINESS_ACTIONS } from "@/lib/activity-actions";
 
 export interface DeployedMachineRow {
   id: string;
@@ -36,7 +37,10 @@ export function useDashboardData() {
         supabase.from("dispensers").select("*", { count: "exact", head: true }).not("location_id", "is", null),
         supabase.from("dispensers").select("*", { count: "exact", head: true }).is("location_id", null),
         supabase.from("audit_log")
-          .select("*, profiles:performed_by(email, full_name), locations:location_id(location_number, name)")
+          // No profiles embed: performed_by points at auth.users, which
+          // has no relationship to profiles, and the embed fails the query.
+          .select("*, locations:location_id(location_number, name)")
+          .in("action", BUSINESS_ACTIONS)
           .order("created_at", { ascending: false })
           .limit(10),
         supabase.from("machines")
